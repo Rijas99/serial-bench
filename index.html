@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Browser serial monitor for Arduino and microcontrollers. Connect via USB, view and send serial data — no install."
+    />
+    <title>Serial Bench — Web Serial Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <header class="top">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Serial Bench</h1>
+          <p class="tagline">USB serial monitor for Arduino &amp; MCUs</p>
+        </div>
+      </div>
+      <div class="status-pill" id="statusPill" data-state="idle">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="toolbar" aria-label="Connection controls">
+        <div class="field-group">
+          <label for="baudRate">Baud</label>
+          <select id="baudRate">
+            <option value="9600" selected>9600</option>
+            <option value="1200">1200</option>
+            <option value="2400">2400</option>
+            <option value="4800">4800</option>
+            <option value="14400">14400</option>
+            <option value="19200">19200</option>
+            <option value="38400">38400</option>
+            <option value="57600">57600</option>
+            <option value="115200">115200</option>
+            <option value="230400">230400</option>
+            <option value="250000">250000</option>
+            <option value="500000">500000</option>
+            <option value="1000000">1000000</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="connectBtn">
+            Connect
+          </button>
+          <button type="button" class="btn btn-ghost" id="disconnectBtn" disabled>
+            Disconnect
+          </button>
+        </div>
+
+        <div class="toggles" role="group" aria-label="Display options">
+          <label class="toggle">
+            <input type="checkbox" id="timestamps" checked />
+            <span>Timestamps</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="hexMode" />
+            <span>Hex view</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="autoScroll" checked />
+            <span>Auto-scroll</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="autoReconnect" checked />
+            <span>Auto-reconnect</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="monitor" aria-label="Serial output">
+        <div class="monitor-meta">
+          <span id="portInfo">No port selected</span>
+          <span id="byteCount">0 bytes</span>
+        </div>
+        <pre id="output" class="output" tabindex="0" aria-live="polite"></pre>
+      </section>
+
+      <section class="composer" aria-label="Send serial data">
+        <div class="field-group line-ending">
+          <label for="lineEnding">Ending</label>
+          <select id="lineEnding">
+            <option value="nl" selected>NL (\\n)</option>
+            <option value="cr">CR (\\r)</option>
+            <option value="crlf">CRLF (\\r\\n)</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+        <input
+          type="text"
+          id="sendInput"
+          placeholder="Type a command and press Enter…"
+          autocomplete="off"
+          spellcheck="false"
+          disabled
+        />
+        <button type="button" class="btn btn-accent" id="sendBtn" disabled>
+          Send
+        </button>
+        <button type="button" class="btn btn-ghost" id="clearBtn">Clear</button>
+        <button type="button" class="btn btn-ghost" id="exportBtn">Export</button>
+      </section>
+
+      <p class="hint" id="compatHint" hidden></p>
+    </main>
+
+    <footer class="foot">
+      <p>
+        Uses the
+        <a
+          href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Web Serial API</a
+        >
+        — Chrome or Edge on desktop. Grant port access when prompted.
+      </p>
+    </footer>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

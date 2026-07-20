@@ -1,30 +1,32 @@
-# Serial Bench
+# Hardware Check
 
-Browser serial monitor for Arduino and similar microcontrollers. No install — open the page in **Chrome** or **Edge**, connect over USB, and read/write serial data.
+Share this page with customers so they can test USB hardware **without installing Arduino IDE**.
 
-## Use locally
+Needs **Chrome or Edge** on a desktop PC (HTTPS or localhost).
 
-Serve the folder over HTTP (Web Serial needs a secure context):
+## Quick start
 
 ```bash
 npx --yes serve .
 ```
 
-Then open the URL shown (usually `http://localhost:3000`).
+## For technicians — customize the shared link
 
-Or push to GitHub and enable **Pages** (Deploy from branch → `/` root).
+```
+https://yoursite.github.io/serial-bench/?baud=115200&expect=FLAP
+```
 
-## Features
+| Param    | Purpose                                      |
+|----------|----------------------------------------------|
+| `baud`   | Serial baud rate (default 115200)            |
+| `expect` | Optional text that means “pass” (e.g. `OK`)  |
 
-- Connect / disconnect via Web Serial API
-- Baud rate selection
-- Timestamps, hex view, auto-scroll
-- Send with NL / CR / CRLF / none
-- Clear log and export `.txt`
-- Auto-reconnect when the cable is unplugged briefly
+## What non-tech users see
 
-## Notes
+1. Plug in USB → **Connect device**
+2. Big result: waiting / responding / working / no data
+3. **Copy screenshot** or **Copy report** for support
 
-- Desktop Chrome or Edge only (not Firefox/Safari; limited mobile support)
-- Page must be HTTPS (GitHub Pages) or `localhost`
-- Match the baud rate to your sketch (`Serial.begin(...)`)
+## Advanced
+
+Expand **Advanced options** for baud, expect text, hex view, send commands, export log.

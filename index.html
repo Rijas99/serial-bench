@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Browser serial monitor for Arduino and microcontrollers. Connect via USB, view and send serial data — no install."
+      content="Check if your USB hardware is working — no Arduino install. Share this link, connect the device, and see a clear pass/fail result."
     />
-    <title>Serial Bench — Web Serial Monitor</title>
+    <title>Hardware Check — USB device test (no install)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -23,112 +23,157 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <h1>Serial Bench</h1>
-          <p class="tagline">USB serial monitor for Arduino &amp; MCUs</p>
+          <h1>Hardware Check</h1>
+          <p class="tagline">Test your device in the browser — no Arduino install</p>
         </div>
       </div>
       <div class="status-pill" id="statusPill" data-state="idle">
         <span class="status-dot" aria-hidden="true"></span>
-        <span id="statusText">Disconnected</span>
+        <span id="statusText">Not connected</span>
       </div>
     </header>
 
     <main class="shell">
-      <section class="toolbar" aria-label="Connection controls">
-        <div class="field-group">
-          <label for="baudRate">Baud</label>
-          <select id="baudRate">
-            <option value="9600" selected>9600</option>
-            <option value="1200">1200</option>
-            <option value="2400">2400</option>
-            <option value="4800">4800</option>
-            <option value="14400">14400</option>
-            <option value="19200">19200</option>
-            <option value="38400">38400</option>
-            <option value="57600">57600</option>
-            <option value="115200">115200</option>
-            <option value="230400">230400</option>
-            <option value="250000">250000</option>
-            <option value="500000">500000</option>
-            <option value="1000000">1000000</option>
-          </select>
-        </div>
-
-        <div class="actions">
-          <button type="button" class="btn btn-primary" id="connectBtn">
-            Connect
-          </button>
-          <button type="button" class="btn btn-ghost" id="disconnectBtn" disabled>
-            Disconnect
-          </button>
-        </div>
-
-        <div class="toggles" role="group" aria-label="Display options">
-          <label class="toggle">
-            <input type="checkbox" id="timestamps" checked />
-            <span>Timestamps</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="hexMode" />
-            <span>Hex view</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="autoScroll" checked />
-            <span>Auto-scroll</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="autoReconnect" checked />
-            <span>Auto-reconnect</span>
-          </label>
-        </div>
-      </section>
-
-      <section class="monitor" aria-label="Serial output">
-        <div class="monitor-meta">
-          <span id="portInfo">No port selected</span>
-          <span id="byteCount">0 bytes</span>
-        </div>
-        <pre id="output" class="output" tabindex="0" aria-live="polite"></pre>
-      </section>
-
-      <section class="composer" aria-label="Send serial data">
-        <div class="field-group line-ending">
-          <label for="lineEnding">Ending</label>
-          <select id="lineEnding">
-            <option value="nl" selected>NL (\\n)</option>
-            <option value="cr">CR (\\r)</option>
-            <option value="crlf">CRLF (\\r\\n)</option>
-            <option value="none">None</option>
-          </select>
-        </div>
-        <input
-          type="text"
-          id="sendInput"
-          placeholder="Type a command and press Enter…"
-          autocomplete="off"
-          spellcheck="false"
-          disabled
-        />
-        <button type="button" class="btn btn-accent" id="sendBtn" disabled>
-          Send
-        </button>
-        <button type="button" class="btn btn-ghost" id="clearBtn">Clear</button>
-        <button type="button" class="btn btn-ghost" id="exportBtn">Export</button>
-      </section>
-
       <p class="hint" id="compatHint" hidden></p>
+
+      <div class="workspace">
+        <div class="workspace-main">
+          <section class="support-bar" aria-label="Share proof with support">
+            <button type="button" class="btn btn-accent" id="screenshotBtn" title="Copy page screenshot">
+              Copy screenshot
+            </button>
+            <button type="button" class="btn btn-ghost" id="copyReportBtn" title="Copy a text report for support">
+              Copy report
+            </button>
+            <button type="button" class="btn btn-ghost" id="clearBtn">Clear log</button>
+          </section>
+
+          <section class="monitor" aria-label="Device messages">
+            <div class="monitor-meta">
+              <span id="portInfo">No device selected</span>
+              <span id="byteCount">0 bytes</span>
+            </div>
+            <pre id="output" class="output" tabindex="0" aria-live="polite"></pre>
+          </section>
+
+          <details class="advanced" id="advancedPanel">
+            <summary>Advanced options (for technicians)</summary>
+            <div class="advanced-body">
+              <section class="toolbar" aria-label="Connection controls">
+                <div class="field-group">
+                  <label for="baudRate">Baud</label>
+                  <select id="baudRate">
+                    <option value="9600">9600</option>
+                    <option value="1200">1200</option>
+                    <option value="2400">2400</option>
+                    <option value="4800">4800</option>
+                    <option value="14400">14400</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600">57600</option>
+                    <option value="115200" selected>115200</option>
+                    <option value="230400">230400</option>
+                    <option value="250000">250000</option>
+                    <option value="500000">500000</option>
+                    <option value="1000000">1000000</option>
+                  </select>
+                </div>
+
+                <div class="field-group expect-field">
+                  <label for="expectText">Expect text (optional)</label>
+                  <input
+                    type="text"
+                    id="expectText"
+                    placeholder="e.g. FLAP or OK"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+
+                <div class="toggles" role="group" aria-label="Display options">
+                  <label class="toggle">
+                    <input type="checkbox" id="timestamps" checked />
+                    <span>Timestamps</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" id="hexMode" />
+                    <span>Hex view</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" id="autoScroll" checked />
+                    <span>Auto-scroll</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" id="autoReconnect" checked />
+                    <span>Auto-reconnect</span>
+                  </label>
+                </div>
+              </section>
+
+              <section class="composer" aria-label="Send serial data">
+                <div class="field-group line-ending">
+                  <label for="lineEnding">Ending</label>
+                  <select id="lineEnding">
+                    <option value="nl" selected>NL (\n)</option>
+                    <option value="cr">CR (\r)</option>
+                    <option value="crlf">CRLF (\r\n)</option>
+                    <option value="none">None</option>
+                  </select>
+                </div>
+                <input
+                  type="text"
+                  id="sendInput"
+                  placeholder="Type a command and press Enter…"
+                  autocomplete="off"
+                  spellcheck="false"
+                  disabled
+                />
+                <button type="button" class="btn btn-accent" id="sendBtn" disabled>Send</button>
+                <button type="button" class="btn btn-ghost" id="exportBtn">Export log</button>
+              </section>
+            </div>
+          </details>
+        </div>
+
+        <aside class="hero-check" aria-label="Device health">
+          <div class="result-card" id="resultCard" data-result="idle">
+            <p class="result-label" id="resultLabel">Ready when you are</p>
+            <p class="result-detail" id="resultDetail">
+              Plug the device into USB, then press Connect. Use Chrome or Edge on a computer.
+            </p>
+          </div>
+
+          <ol class="steps">
+            <li>
+              <span class="step-num">1</span>
+              <span>Plug the device into a USB port on this computer</span>
+            </li>
+            <li>
+              <span class="step-num">2</span>
+              <span>Press <strong>Connect</strong> and choose the device in the list</span>
+            </li>
+            <li>
+              <span class="step-num">3</span>
+              <span>Wait a few seconds — this page will say if it is working</span>
+            </li>
+          </ol>
+
+          <div class="hero-actions">
+            <button type="button" class="btn btn-primary btn-lg" id="connectBtn">
+              Connect device
+            </button>
+            <button type="button" class="btn btn-ghost btn-lg" id="disconnectBtn" disabled>
+              Disconnect
+            </button>
+          </div>
+        </aside>
+      </div>
     </main>
 
     <footer class="foot">
       <p>
-        Uses the
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API"
-          target="_blank"
-          rel="noopener noreferrer"
-          >Web Serial API</a
-        >
-        — Chrome or Edge on desktop. Grant port access when prompted.
+        Needs <strong>Chrome or Edge</strong> on a desktop PC (not phone). Page works over HTTPS —
+        no software install.
       </p>
     </footer>
 

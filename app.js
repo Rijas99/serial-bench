@@ -1,6 +1,9 @@
 /**
- * Serial Bench — Web Serial monitor for Arduino / MCU testing.
+ * Hardware Check — Web Serial test page for non-technical users.
  * Host on GitHub Pages (HTTPS). Requires Chrome or Edge on desktop.
+ *
+ * Share link options for technicians:
+ *   ?baud=115200&expect=FLAP
  */
 
 const $ = (id) => document.getElementById(id);
@@ -11,7 +14,10 @@ const els = {
   sendBtn: $("sendBtn"),
   clearBtn: $("clearBtn"),
   exportBtn: $("exportBtn"),
+  screenshotBtn: $("screenshotBtn"),
+  copyReportBtn: $("copyReportBtn"),
   baudRate: $("baudRate"),
+  expectText: $("expectText"),
   lineEnding: $("lineEnding"),
   sendInput: $("sendInput"),
   output: $("output"),
@@ -24,6 +30,9 @@ const els = {
   autoScroll: $("autoScroll"),
   autoReconnect: $("autoReconnect"),
   compatHint: $("compatHint"),
+  resultCard: $("resultCard"),
+  resultLabel: $("resultLabel"),
+  resultDetail: $("resultDetail"),
 };
 
 /** @type {SerialPort | null} */
@@ -39,8 +48,16 @@ let totalBytes = 0;
 let reconnectTimer = null;
 let reconnectAttempt = 0;
 let intentionalClose = false;
+let rxBuffer = "";
 /** @type {{ usbVendorId?: number, usbProductId?: number } | null} */
 let lastPortInfo = null;
+
+/** @type {"idle"|"waiting"|"working"|"matched"|"nodata"|"error"} */
+let healthState = "idle";
+let receivedAnyData = false;
+let matchedExpect = false;
+let noDataTimer = null;
+const NO_DATA_MS = 8000;
 
 const textEncoder = new TextEncoder();
 /** @type {TextDecoder} */
@@ -67,6 +84,103 @@ function setConnectedUi(connected) {
   els.sendBtn.disabled = !connected;
   els.sendInput.disabled = !connected;
   els.baudRate.disabled = connected;
+}
+
+function setHealth(state, label, detail) {
+  healthState = state;
+  els.resultCard.dataset.result = state;
+  els.resultLabel.textContent = label;
+  els.resultDetail.textContent = detail;
+}
+
+function clearNoDataTimer() {
+  if (noDataTimer !== null) {
+    clearTimeout(noDataTimer);
+    noDataTimer = null;
+  }
+}
+
+function startWaitingForData() {
+  receivedAnyData = false;
+  matchedExpect = false;
+  clearNoDataTimer();
+  setHealth(
+    "waiting",
+    "Connected — waiting for data…",
+    "Leave the cable plugged in. If the device is healthy, messages should appear below within a few seconds."
+  );
+  setStatus("connected", "Connected — waiting");
+
+  noDataTimer = setTimeout(() => {
+    if (!port || receivedAnyData) return;
+    setHealth(
+      "nodata",
+      "Connected, but no data yet",
+      "Cable may be fine, but the device is not sending. Check power, baud rate (Advanced), or send a Copy report / screenshot to support."
+    );
+    setStatus("reconnecting", "No data yet");
+  }, NO_DATA_MS);
+}
+
+function getExpectNeedle() {
+  return (els.expectText.value || "").trim().toLowerCase();
+}
+
+function onSerialLine(line) {
+  if (!line && line !== "") return;
+
+  if (!receivedAnyData) {
+    receivedAnyData = true;
+    clearNoDataTimer();
+  }
+
+  const needle = getExpectNeedle();
+  if (needle && line.toLowerCase().includes(needle)) {
+    matchedExpect = true;
+  }
+
+  if (matchedExpect) {
+    setHealth(
+      "matched",
+      "Device working",
+      `Received the expected signal (“${els.expectText.value.trim()}”). You can disconnect and tell support it passed.`
+    );
+    setStatus("connected", "Working");
+  } else if (receivedAnyData) {
+    setHealth(
+      "working",
+      "Device is responding",
+      needle
+        ? `Data is arriving, but the expected text “${els.expectText.value.trim()}” was not seen yet.`
+        : "The device is sending data over USB — hardware link looks good."
+    );
+    setStatus("connected", "Responding");
+  }
+}
+
+function ingestText(chunk) {
+  if (!chunk) return;
+
+  rxBuffer += chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const parts = rxBuffer.split("\n");
+  rxBuffer = parts.pop() ?? "";
+
+  for (const line of parts) {
+    appendLine("rx", line);
+    onSerialLine(line);
+  }
+}
+
+function flushRxBuffer() {
+  if (!rxBuffer) return;
+  const leftover = rxBuffer;
+  rxBuffer = "";
+  appendLine("rx", leftover);
+  onSerialLine(leftover);
+}
+
+function clearRxBuffer() {
+  rxBuffer = "";
 }
 
 function timestamp() {
@@ -186,6 +300,7 @@ async function openPort(selectedPort) {
   intentionalClose = false;
   reconnectAttempt = 0;
   textDecoder = new TextDecoder();
+  clearRxBuffer();
   clearReconnectTimer();
 
   const info = port.getInfo?.() ?? {};
@@ -193,8 +308,8 @@ async function openPort(selectedPort) {
   els.portInfo.textContent = formatPortLabel(baudRate, info);
 
   setConnectedUi(true);
-  setStatus("connected", "Connected");
   appendLine("sys", `Port opened at ${baudRate} baud`);
+  startWaitingForData();
 
   port.addEventListener("disconnect", onPortDisconnect);
 
@@ -222,11 +337,9 @@ async function readLoop() {
 
       if (els.hexMode.checked) {
         appendLine("hex", bytesToHex(value));
+        onSerialLine(bytesToHex(value));
       } else {
-        const text = textDecoder.decode(value, { stream: true });
-        if (text) {
-          appendLine("rx", text.replace(/\r\n/g, "\n").replace(/\r/g, "\n"));
-        }
+        ingestText(textDecoder.decode(value, { stream: true }));
       }
     }
   } catch (err) {
@@ -234,6 +347,7 @@ async function readLoop() {
       appendLine("sys", `Read error: ${err.message || err}`);
     }
   } finally {
+    flushRxBuffer();
     try {
       reader?.releaseLock();
     } catch {
@@ -247,9 +361,15 @@ function onPortDisconnect() {
   if (intentionalClose) return;
 
   appendLine("sys", "Device disconnected");
+  clearNoDataTimer();
   setConnectedUi(false);
-  setStatus("error", "Disconnected");
-  els.portInfo.textContent = "Port lost";
+  setStatus("error", "Unplugged");
+  els.portInfo.textContent = "Device unplugged";
+  setHealth(
+    "error",
+    "Device unplugged",
+    "Plug it back in and press Connect again, or send a Copy report / screenshot to support."
+  );
 
   releaseStreams().then(() => {
     port = null;
@@ -308,13 +428,18 @@ async function connect() {
     intentionalClose = false;
     const selected = await navigator.serial.requestPort();
     await openPort(selected);
-    els.sendInput.focus();
   } catch (err) {
     if (err?.name === "NotFoundError") {
-      appendLine("sys", "No port selected");
+      appendLine("sys", "No device selected");
+      setHealth(
+        "idle",
+        "No device selected",
+        "Press Connect again and pick your device from the browser list."
+      );
       return;
     }
     setStatus("error", "Connect failed");
+    setHealth("error", "Could not connect", String(err.message || err));
     appendLine("sys", `Connect error: ${err.message || err}`);
   }
 }
@@ -322,6 +447,7 @@ async function connect() {
 async function disconnect() {
   intentionalClose = true;
   clearReconnectTimer();
+  clearNoDataTimer();
   keepReading = false;
 
   if (port) {
@@ -332,8 +458,13 @@ async function disconnect() {
   port = null;
 
   setConnectedUi(false);
-  setStatus("idle", "Disconnected");
-  els.portInfo.textContent = "No port selected";
+  setStatus("idle", "Not connected");
+  els.portInfo.textContent = "No device selected";
+  setHealth(
+    "idle",
+    "Disconnected",
+    "Press Connect device when you are ready to test again."
+  );
   appendLine("sys", "Port closed");
 }
 
@@ -363,6 +494,7 @@ async function send() {
 
 function clearLog() {
   els.output.textContent = "";
+  clearRxBuffer();
   totalBytes = 0;
   updateByteCount();
 }
@@ -379,17 +511,216 @@ function exportLog() {
   const a = document.createElement("a");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   a.href = url;
-  a.download = `serial-bench-${stamp}.txt`;
+  a.download = `hardware-check-${stamp}.txt`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function buildSupportReport() {
+  const lines = [
+    "Hardware Check report",
+    `Time: ${new Date().toISOString()}`,
+    `Page: ${location.href}`,
+    `Result: ${els.resultLabel.textContent}`,
+    `Detail: ${els.resultDetail.textContent}`,
+    `Connection: ${els.statusText.textContent}`,
+    `Port: ${els.portInfo.textContent}`,
+    `Bytes: ${els.byteCount.textContent}`,
+    `Baud: ${els.baudRate.value}`,
+    `Expect: ${els.expectText.value.trim() || "(any data)"}`,
+    `Browser: ${navigator.userAgent}`,
+    "",
+    "--- Log ---",
+    els.output.innerText || "(empty)",
+  ];
+  return lines.join("\n");
+}
+
+async function copyReport() {
+  const report = buildSupportReport();
+  try {
+    await navigator.clipboard.writeText(report);
+    appendLine("sys", "Support report copied — paste it to your technician");
+  } catch {
+    const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hardware-check-report.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+    appendLine("sys", "Clipboard blocked — report downloaded as a file instead");
+  }
+}
+
+function canvasToPngBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Could not create PNG"));
+    }, "image/png");
+  });
+}
+
+function downloadPngBlob(blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  a.href = url;
+  a.download = `hardware-check-${stamp}.png`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyPngToClipboard(blob) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("Clipboard images are not supported in this browser");
+  }
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+async function captureViaDisplayMedia() {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    throw new Error("Display capture not available");
+  }
+
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: false,
+    preferCurrentTab: true,
+    selfBrowserSurface: "include",
+    systemAudio: "exclude",
+  });
+
+  const video = document.createElement("video");
+  video.playsInline = true;
+  video.muted = true;
+  video.srcObject = stream;
+
+  try {
+    await video.play();
+    if (!video.videoWidth) {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("Capture timed out")), 8000);
+        video.onloadedmetadata = () => {
+          clearTimeout(t);
+          resolve();
+        };
+      });
+    }
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    return canvasToPngBlob(canvas);
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
+  }
+}
+
+async function captureViaHtml2Canvas() {
+  const { default: html2canvas } = await import(
+    "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm"
+  );
+
+  document.documentElement.classList.add("capturing-screenshot");
+  try {
+    await new Promise((r) => requestAnimationFrame(r));
+
+    const canvas = await html2canvas(document.body, {
+      backgroundColor: "#e8eef2",
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      useCORS: true,
+      logging: false,
+      foreignObjectRendering: false,
+      scrollX: 0,
+      scrollY: -window.scrollY,
+      windowWidth: document.documentElement.scrollWidth,
+      windowHeight: document.documentElement.scrollHeight,
+      onclone(clonedDoc) {
+        clonedDoc.documentElement.classList.add("capturing-screenshot");
+        clonedDoc.querySelectorAll(".top, .shell, .monitor, .foot, .hero-check").forEach((el) => {
+          el.style.animation = "none";
+          el.style.opacity = "1";
+          el.style.transform = "none";
+        });
+      },
+    });
+
+    return canvasToPngBlob(canvas);
+  } finally {
+    document.documentElement.classList.remove("capturing-screenshot");
+  }
+}
+
+async function screenshotToClipboard() {
+  const btn = els.screenshotBtn;
+  if (btn.dataset.busy === "1") return;
+
+  btn.dataset.busy = "1";
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+
+  try {
+    let blob;
+    try {
+      blob = await Promise.race([
+        captureViaHtml2Canvas(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Page capture timed out")), 15000)
+        ),
+      ]);
+    } catch (domErr) {
+      appendLine("sys", `Page capture failed (${domErr.message || domErr}). Trying tab capture…`);
+      blob = await captureViaDisplayMedia();
+    }
+
+    try {
+      await copyPngToClipboard(blob);
+      appendLine("sys", "Screenshot copied — paste with Ctrl+V to send to support");
+    } catch (clipErr) {
+      downloadPngBlob(blob);
+      appendLine(
+        "sys",
+        `Clipboard blocked (${clipErr.message || clipErr}). PNG downloaded instead.`
+      );
+    }
+  } catch (err) {
+    appendLine("sys", `Screenshot failed: ${err.message || err}`);
+  } finally {
+    btn.dataset.busy = "0";
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+  }
 }
 
 function showCompat() {
   els.compatHint.hidden = false;
   els.compatHint.textContent =
-    "Web Serial is not available in this browser. Open this page in Chrome or Edge on a desktop PC (HTTPS or localhost).";
+    "This check needs Chrome or Edge on a Windows/Mac computer (not a phone). Open this same link there, then plug in the device.";
   els.connectBtn.disabled = true;
-  setStatus("error", "Unsupported browser");
+  setStatus("error", "Wrong browser");
+  setHealth(
+    "error",
+    "Please use Chrome or Edge on a computer",
+    "Phones and Firefox/Safari cannot talk to USB serial devices from a web page."
+  );
+}
+
+function applyUrlParams() {
+  const params = new URLSearchParams(location.search);
+  const baud = params.get("baud");
+  const expect = params.get("expect");
+
+  if (baud && [...els.baudRate.options].some((o) => o.value === baud)) {
+    els.baudRate.value = baud;
+  }
+  if (expect) {
+    els.expectText.value = expect;
+  }
 }
 
 function wireEvents() {
@@ -398,6 +729,8 @@ function wireEvents() {
   els.sendBtn.addEventListener("click", send);
   els.clearBtn.addEventListener("click", clearLog);
   els.exportBtn.addEventListener("click", exportLog);
+  els.screenshotBtn.addEventListener("click", screenshotToClipboard);
+  els.copyReportBtn.addEventListener("click", copyReport);
 
   els.sendInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -407,16 +740,37 @@ function wireEvents() {
   });
 
   els.hexMode.addEventListener("change", () => {
-    appendLine(
-      "sys",
-      els.hexMode.checked
-        ? "Hex view enabled (new data shown as hex)"
-        : "Text view enabled"
+    if (els.hexMode.checked) {
+      flushRxBuffer();
+      appendLine("sys", "Hex view enabled");
+    } else {
+      clearRxBuffer();
+      appendLine("sys", "Text view enabled (lines buffered until newline)");
+    }
+  });
+
+  els.expectText.addEventListener("change", () => {
+    if (!port || !receivedAnyData) return;
+    matchedExpect = false;
+    const needle = getExpectNeedle();
+    if (!needle) {
+      setHealth(
+        "working",
+        "Device is responding",
+        "The device is sending data over USB — hardware link looks good."
+      );
+      return;
+    }
+    setHealth(
+      "working",
+      "Device is responding",
+      `Waiting for expected text “${els.expectText.value.trim()}”.`
     );
   });
 }
 
 async function init() {
+  applyUrlParams();
   wireEvents();
 
   if (!supportsSerial()) {
@@ -424,15 +778,20 @@ async function init() {
     return;
   }
 
-  setStatus("idle", "Disconnected");
-  appendLine("sys", "Ready. Click Connect and choose your Arduino / serial device.");
+  setStatus("idle", "Not connected");
+  setHealth(
+    "idle",
+    "Ready when you are",
+    "Plug the device into USB, then press Connect. Use Chrome or Edge on a computer."
+  );
+  appendLine("sys", "Ready — press Connect device and choose your hardware.");
 
   try {
     const ports = await navigator.serial.getPorts();
     if (ports.length) {
       appendLine(
         "sys",
-        `${ports.length} previously allowed port(s) available — click Connect to use one.`
+        `${ports.length} previously allowed device(s) available — press Connect to use one.`
       );
     }
   } catch {
@@ -441,7 +800,7 @@ async function init() {
 
   navigator.serial.addEventListener("connect", () => {
     if (!port && els.autoReconnect.checked && !intentionalClose) {
-      appendLine("sys", "Serial device plugged in");
+      appendLine("sys", "USB device plugged in");
       tryReconnect();
     }
   });

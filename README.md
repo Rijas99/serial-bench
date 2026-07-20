@@ -27,6 +27,12 @@ https://yoursite.github.io/serial-bench/?baud=115200&expect=FLAP
 2. Big result: waiting / responding / working / no data
 3. **Copy screenshot** or **Copy report** for support
 
-## Advanced
+## Layout
 
-Expand **Advanced options** for baud, expect text, hex view, send commands, export log.
+- **Left:** Advanced sidebar (Hide / Advanced to open) — baud, expect, send, export
+- **Center:** Pause, Latest only, screenshot/report, log
+- **Right:** Device status + Connect
+
+## Continuous sensors
+
+Use **Latest only** to show one live value, or **Pause** to freeze the screen.

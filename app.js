@@ -16,6 +16,15 @@ const els = {
   exportBtn: $("exportBtn"),
   screenshotBtn: $("screenshotBtn"),
   copyReportBtn: $("copyReportBtn"),
+  pauseBtn: $("pauseBtn"),
+  latestOnly: $("latestOnly"),
+  latestPanel: $("latestPanel"),
+  latestValue: $("latestValue"),
+  latestMeta: $("latestMeta"),
+  workspace: $("workspace"),
+  workspaceMain: document.querySelector(".workspace-main"),
+  sidebarOpenBtn: $("sidebarOpenBtn"),
+  sidebarCloseBtn: $("sidebarCloseBtn"),
   baudRate: $("baudRate"),
   expectText: $("expectText"),
   lineEnding: $("lineEnding"),
@@ -58,6 +67,11 @@ let receivedAnyData = false;
 let matchedExpect = false;
 let noDataTimer = null;
 const NO_DATA_MS = 8000;
+let displayPaused = false;
+/** Ring buffer for export/report when the live log is paused or latest-only. */
+const logBuffer = [];
+const MAX_LOG_BUFFER = 3000;
+let latestLineCount = 0;
 
 const textEncoder = new TextEncoder();
 /** @type {TextDecoder} */
@@ -192,7 +206,71 @@ function timestamp() {
   );
 }
 
+function pushLogBuffer(lineText) {
+  logBuffer.push(lineText);
+  if (logBuffer.length > MAX_LOG_BUFFER) {
+    logBuffer.splice(0, logBuffer.length - MAX_LOG_BUFFER);
+  }
+}
+
+function setSidebarOpen(open) {
+  els.workspace.dataset.sidebar = open ? "open" : "closed";
+  els.sidebarOpenBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  els.sidebarOpenBtn.hidden = open;
+}
+
+function setPaused(paused) {
+  displayPaused = paused;
+  els.pauseBtn.setAttribute("aria-pressed", paused ? "true" : "false");
+  els.pauseBtn.textContent = paused ? "Resume" : "Pause";
+  appendLine(
+    "sys",
+    paused
+      ? "Display paused — incoming data is still counted, screen is frozen"
+      : "Display resumed"
+  );
+  syncLatestMode();
+}
+
+function syncLatestMode() {
+  const on = els.latestOnly.checked;
+  els.latestPanel.hidden = !on;
+  els.workspaceMain.classList.toggle("latest-mode", on);
+  if (on) {
+    els.latestMeta.textContent = displayPaused
+      ? "Paused — latest value frozen"
+      : "Showing only the newest line (good for continuous sensors)";
+  }
+}
+
+function updateLatestDisplay(text) {
+  if (displayPaused) return;
+  latestLineCount += 1;
+  els.latestValue.textContent = text || "—";
+  els.latestMeta.textContent = `Updated ${timestamp()} · ${latestLineCount.toLocaleString()} readings`;
+}
+
 function appendLine(kind, text) {
+  const stamp = els.timestamps.checked ? `[${timestamp()}] ` : "";
+  const plain = `${stamp}${text}`;
+  pushLogBuffer(plain);
+
+  const isData = kind === "rx" || kind === "hex";
+
+  if (isData && els.latestOnly.checked) {
+    updateLatestDisplay(text);
+  }
+
+  // Freeze the visible log (and latest) while paused — still keep buffer + health updates.
+  if (displayPaused && isData) {
+    return;
+  }
+
+  // Latest-only: skip flooding the scrolling log with sensor lines.
+  if (els.latestOnly.checked && isData) {
+    return;
+  }
+
   const line = document.createElement("div");
   line.className = `line ${kind}`;
 
@@ -553,12 +631,19 @@ async function send() {
 function clearLog() {
   els.output.textContent = "";
   clearRxBuffer();
+  logBuffer.length = 0;
+  latestLineCount = 0;
+  els.latestValue.textContent = "—";
+  els.latestMeta.textContent = els.latestOnly.checked
+    ? "Waiting for readings…"
+    : "Turn on Latest only for continuous sensors";
   totalBytes = 0;
   updateByteCount();
 }
 
 function exportLog() {
-  const text = els.output.innerText || "";
+  const text =
+    logBuffer.length > 0 ? logBuffer.join("\n") : els.output.innerText || "";
   if (!text.trim()) {
     appendLine("sys", "Nothing to export");
     return;
@@ -589,7 +674,7 @@ function buildSupportReport() {
     `Browser: ${navigator.userAgent}`,
     "",
     "--- Log ---",
-    els.output.innerText || "(empty)",
+    logBuffer.length > 0 ? logBuffer.join("\n") : els.output.innerText || "(empty)",
   ];
   return lines.join("\n");
 }
@@ -790,6 +875,23 @@ function wireEvents() {
   els.screenshotBtn.addEventListener("click", screenshotToClipboard);
   els.copyReportBtn.addEventListener("click", copyReport);
 
+  els.pauseBtn.addEventListener("click", () => {
+    setPaused(!displayPaused);
+  });
+
+  els.latestOnly.addEventListener("change", () => {
+    syncLatestMode();
+    appendLine(
+      "sys",
+      els.latestOnly.checked
+        ? "Latest only on — continuous readings show as one live value"
+        : "Latest only off — full scrolling log"
+    );
+  });
+
+  els.sidebarOpenBtn.addEventListener("click", () => setSidebarOpen(true));
+  els.sidebarCloseBtn.addEventListener("click", () => setSidebarOpen(false));
+
   els.sendInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -830,6 +932,8 @@ function wireEvents() {
 async function init() {
   applyUrlParams();
   wireEvents();
+  setSidebarOpen(false);
+  syncLatestMode();
 
   if (!supportsSerial()) {
     showCompat();
@@ -843,6 +947,7 @@ async function init() {
     "Plug the device into USB, then press Connect. Use Chrome or Edge on a computer."
   );
   appendLine("sys", "Ready — press Connect device and choose your hardware.");
+  appendLine("sys", "Tip: for continuous sensors, turn on Latest only (or Pause to freeze the screen).");
 
   try {
     const ports = await navigator.serial.getPorts();

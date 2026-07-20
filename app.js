@@ -293,9 +293,56 @@ function formatPortLabel(baudRate, info) {
   return `Connected · ${baudRate} baud · VID ${vid} PID ${pid}`;
 }
 
+/**
+ * Another app (Arduino IDE, PuTTY, another browser tab, etc.) often locks the COM port.
+ * Web Serial then fails open() with NetworkError / "Failed to open serial port".
+ */
+function isPortBusyError(err) {
+  const name = String(err?.name || "");
+  const msg = String(err?.message || err || "").toLowerCase();
+
+  if (name === "NetworkError" || name === "InvalidStateError") return true;
+
+  return (
+    msg.includes("failed to open") ||
+    msg.includes("access denied") ||
+    msg.includes("access is denied") ||
+    msg.includes("resource busy") ||
+    msg.includes("device or resource busy") ||
+    msg.includes("in use") ||
+    msg.includes("already open") ||
+    msg.includes("exclusive") ||
+    msg.includes("permission denied")
+  );
+}
+
+function showPortBusyWarning(err) {
+  setStatus("error", "Port in use");
+  setConnectedUi(false);
+  els.portInfo.textContent = "Could not open device";
+  setHealth(
+    "error",
+    "Device is busy in another program",
+    "Close Arduino IDE Serial Monitor, PuTTY, or any other serial software using this USB port. Also close other browser tabs of this page. Then press Connect again."
+  );
+  appendLine(
+    "sys",
+    `Port busy / locked — close other serial software and retry. (${err?.message || err})`
+  );
+}
+
 async function openPort(selectedPort) {
   const baudRate = Number(els.baudRate.value);
-  await selectedPort.open({ baudRate });
+
+  try {
+    await selectedPort.open({ baudRate });
+  } catch (err) {
+    if (isPortBusyError(err)) {
+      showPortBusyWarning(err);
+    }
+    throw err;
+  }
+
   port = selectedPort;
   intentionalClose = false;
   reconnectAttempt = 0;
@@ -438,8 +485,19 @@ async function connect() {
       );
       return;
     }
+    if (isPortBusyError(err)) {
+      // openPort already showed the busy warning when open() failed
+      if (els.resultCard.dataset.result !== "error") {
+        showPortBusyWarning(err);
+      }
+      return;
+    }
     setStatus("error", "Connect failed");
-    setHealth("error", "Could not connect", String(err.message || err));
+    setHealth(
+      "error",
+      "Could not connect",
+      `${err.message || err}. If the Arduino IDE Serial Monitor is open, close it and try again.`
+    );
     appendLine("sys", `Connect error: ${err.message || err}`);
   }
 }

@@ -54,6 +54,17 @@ let writer = null;
 let keepReading = false;
 let readPromise = null;
 let totalBytes = 0;
+/**
+ * Chrome's Web Serial default buffer is 255 bytes. An FTDI adapter
+ * (VID 0x0403) delivers ESP32 boot text in bigger chunks, so the stream
+ * errors with "Buffer overrun". Arduino IDE uses a much larger OS buffer.
+ */
+const SERIAL_BUFFER_SIZE = 1024 * 1024;
+const MAX_DOM_LINES = 500;
+/** Bytes waiting to be painted. Copied out of the read() chunk before the next read. */
+let pendingRx = [];
+let rxPaint = 0;
+let overrunLogCount = 0;
 let reconnectTimer = null;
 let reconnectAttempt = 0;
 let intentionalClose = false;
@@ -287,10 +298,78 @@ function appendLine(kind, text) {
   line.appendChild(body);
 
   els.output.appendChild(line);
+  trimOutput();
 
   if (els.autoScroll.checked) {
     els.output.scrollTop = els.output.scrollHeight;
   }
+}
+
+function trimOutput() {
+  const extra = els.output.childElementCount - MAX_DOM_LINES;
+  if (extra <= 0) return;
+  const range = document.createRange();
+  range.setStart(els.output, 0);
+  range.setEnd(els.output, extra);
+  range.deleteContents();
+}
+
+function isBufferOverrun(err) {
+  const name = String(err?.name || "");
+  const msg = String(err?.message || err || "");
+  return name === "BufferOverrunError" || /buffer overrun/i.test(msg);
+}
+
+function noteOverrun() {
+  overrunLogCount += 1;
+  if (overrunLogCount === 1) {
+    appendLine(
+      "sys",
+      "Buffer overrun — kept reading (a few bytes at that moment may be missing)"
+    );
+  } else if (overrunLogCount === 8) {
+    appendLine(
+      "sys",
+      "Repeated buffer overruns — turn on Latest only so the screen can keep up"
+    );
+  }
+}
+
+function noteRx(value) {
+  pendingRx.push(new Uint8Array(value));
+  totalBytes += value.length;
+  if (!rxPaint) rxPaint = requestAnimationFrame(paintRx);
+}
+
+function paintRx() {
+  rxPaint = 0;
+  const chunks = pendingRx;
+  pendingRx = [];
+  updateByteCount();
+  if (!chunks.length) return;
+
+  if (els.hexMode.checked) {
+    for (const chunk of chunks) {
+      const hex = bytesToHex(chunk);
+      appendLine("hex", hex);
+      onSerialLine(hex);
+    }
+    return;
+  }
+
+  let text = "";
+  for (const chunk of chunks) {
+    text += textDecoder.decode(chunk, { stream: true });
+  }
+  ingestText(text);
+}
+
+function flushPendingRxSync() {
+  if (rxPaint) {
+    cancelAnimationFrame(rxPaint);
+    rxPaint = 0;
+  }
+  if (pendingRx.length) paintRx();
 }
 
 function updateByteCount() {
@@ -413,7 +492,11 @@ async function openPort(selectedPort) {
   const baudRate = Number(els.baudRate.value);
 
   try {
-    await selectedPort.open({ baudRate });
+    await selectedPort.open({
+      baudRate,
+      bufferSize: SERIAL_BUFFER_SIZE,
+      flowControl: "none",
+    });
   } catch (err) {
     if (isPortBusyError(err)) {
       showPortBusyWarning(err);
@@ -424,8 +507,14 @@ async function openPort(selectedPort) {
   port = selectedPort;
   intentionalClose = false;
   reconnectAttempt = 0;
+  overrunLogCount = 0;
   textDecoder = new TextDecoder();
   clearRxBuffer();
+  pendingRx = [];
+  if (rxPaint) {
+    cancelAnimationFrame(rxPaint);
+    rxPaint = 0;
+  }
   clearReconnectTimer();
 
   const info = port.getInfo?.() ?? {};
@@ -433,52 +522,62 @@ async function openPort(selectedPort) {
   els.portInfo.textContent = formatPortLabel(baudRate, info);
 
   setConnectedUi(true);
-  appendLine("sys", `Port opened at ${baudRate} baud`);
-  startWaitingForData();
-
+  port.removeEventListener("disconnect", onPortDisconnect);
   port.addEventListener("disconnect", onPortDisconnect);
 
   if (port.writable) {
     writer = port.writable.getWriter();
   }
 
+  // Start reading before painting the log. The default 255-byte pipe
+  // overruns if DOM work runs first, and closing the port to "recover"
+  // pulses DTR, which resets the ESP32 and repeats the burst.
   keepReading = true;
   readPromise = readLoop();
+
+  appendLine(
+    "sys",
+    `Port opened at ${baudRate} baud (${Math.round(SERIAL_BUFFER_SIZE / 1024)} KB buffer)`
+  );
+  startWaitingForData();
 }
 
 async function readLoop() {
-  if (!port?.readable) return;
-
-  reader = port.readable.getReader();
-
   try {
-    while (keepReading) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!value?.length) continue;
-
-      totalBytes += value.length;
-      updateByteCount();
-
-      if (els.hexMode.checked) {
-        appendLine("hex", bytesToHex(value));
-        onSerialLine(bytesToHex(value));
-      } else {
-        ingestText(textDecoder.decode(value, { stream: true }));
+    while (keepReading && port?.readable) {
+      reader = port.readable.getReader();
+      let resume = false;
+      try {
+        while (keepReading) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          if (value?.length) noteRx(value);
+        }
+      } catch (err) {
+        resume = keepReading && !intentionalClose && isBufferOverrun(err);
+        if (resume) {
+          noteOverrun();
+        } else if (keepReading && !intentionalClose) {
+          appendLine("sys", `Read error: ${err.message || err}`);
+        }
+      } finally {
+        try {
+          reader?.releaseLock();
+        } catch {
+          /* ignore */
+        }
+        reader = null;
       }
-    }
-  } catch (err) {
-    if (keepReading && !intentionalClose) {
-      appendLine("sys", `Read error: ${err.message || err}`);
+      if (!resume) break;
+      if (overrunLogCount > 40) {
+        appendLine("sys", "Stopped reading after repeated buffer overruns");
+        break;
+      }
+      await new Promise((r) => setTimeout(r, overrunLogCount > 5 ? 20 : 0));
     }
   } finally {
+    flushPendingRxSync();
     flushRxBuffer();
-    try {
-      reader?.releaseLock();
-    } catch {
-      /* ignore */
-    }
-    reader = null;
   }
 }
 

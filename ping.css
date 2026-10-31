@@ -42,5 +42,26 @@
 .ping-setup details p { margin-top: 0.7rem; }
 .ping-setup[data-connected="true"] #helperDetail { color: var(--accent); }
 .ping-setup[data-connected="true"] .steps, .ping-setup[data-connected="true"] .download-helper, .ping-setup[data-connected="true"] .helper-launch { display: none; }
+.udp-terminal { padding: 1.4rem; border-top: 1px solid var(--line); min-width: 0; }
+.udp-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.udp-heading h2 { font-size: 1.25rem; margin: 0; }
+#udpStatus { font-size: 0.85rem; color: var(--ink-soft); }
+.udp-help { margin: 0.7rem 0; font-size: 0.85rem; line-height: 1.55; color: var(--ink-soft); }
+.udp-help a { color: var(--accent); text-underline-offset: 3px; }
+.udp-connection, .udp-composer { display: flex; flex-wrap: wrap; align-items: end; gap: 0.7rem; margin-top: 1rem; }
+.udp-connection .field-group { flex: 1 1 135px; min-width: 0; }
+.udp-connection .field-group:first-child { flex-basis: 180px; }
+.udp-terminal input:not([type="checkbox"]) { appearance: none; width: 100%; min-width: 0; font: 0.9rem var(--font-mono); padding: 0.6rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); color: var(--ink); caret-color: var(--accent); }
+.udp-terminal input::placeholder { color: #61717c; opacity: 1; }
+.udp-terminal input:disabled { opacity: 0.6; }
+.udp-terminal .field-group select { max-width: 100%; }
+.udp-endpoint { margin: 0.85rem 0; font: 0.82rem/1.5 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
+.udp-log-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem; margin: 1rem 0 0.65rem; }
+.udp-output { height: 290px; overflow: auto; margin: 0; padding: 1rem; background: #101820; color: #d7e4ee; border-radius: 10px; font: 0.8rem/1.65 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: #6f8798 #101820; }
+.udp-output .rx { color: #b8e6d4; }
+.udp-output .tx { color: #f0c18a; }
+.udp-output .sys { color: #a6b9c7; }
+.udp-command { flex: 1 1 240px; min-width: 0; }
+@media (max-width: 480px) { .udp-terminal { padding: 1rem; } .udp-connection .btn { flex: 1; } }
 @media (max-width: 900px) { .ping-workspace { grid-template-columns: minmax(0, 1fr); } .ping-setup { grid-row: 1; } }
 @media (max-width: 480px) { .ping-controls, .ping-live { padding: 1rem; } .ping-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-left: 1rem; margin-right: 1rem; } .ping-live { flex-wrap: wrap; } .ping-table th, .ping-table td { padding: 0.65rem 0.45rem; } .ping-table th:first-child, .ping-table td:first-child { padding-left: 0.7rem; } }

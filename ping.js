@@ -1,3 +1,5 @@
+import { createUdpTerminal } from "./udp.js?v=1";
+
 const $ = (id) => document.getElementById(id);
 const HELPER = "http://127.0.0.1:47831";
 const KEY = "hardware-check-helper-key";
@@ -22,6 +24,7 @@ let stopRequested = false;
 let wake = null;
 let sent = 0, received = 0, lost = 0, totalMs = 0;
 let minMs = Infinity, maxMs = 0;
+let udpTerminal = null, supportsUdp = false;
 
 function showHelper(connected, title, detail) {
   ready = connected;
@@ -30,14 +33,16 @@ function showHelper(connected, title, detail) {
   $("helperDetail").textContent = detail;
   document.querySelector(".ping-setup").dataset.connected = String(connected);
   $("startBtn").disabled = !connected || active;
+  udpTerminal?.setHelperState(connected, supportsUdp);
 }
 
-async function request(path, body) {
+async function request(path, body, options = {}) {
   const response = await fetch(HELPER + path, {
     method: body ? "POST" : "GET",
     mode: "cors",
     credentials: "omit",
     cache: "no-store",
+    keepalive: Boolean(options.keepalive),
     targetAddressSpace: "loopback",
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body ? { "Content-Type": "application/json" } : {}) },
@@ -59,9 +64,10 @@ async function checkHelper() {
   $("checkHelperBtn").disabled = true;
   try {
     const data = await request("/health");
-    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0"].includes(data.version)) {
+    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0", "1.2.0"].includes(data.version)) {
       throw new Error("Unexpected helper version. Download the current helper.");
     }
+    supportsUdp = data.capabilities?.includes("udp") === true;
     if (data.paired === true) {
       showHelper(true, "Helper connected — ready to ping", "Connected to this laptop. Enter a device IP and start the test.");
     } else {
@@ -196,6 +202,7 @@ $("stopBtn").addEventListener("click", () => {
   wake?.();
 });
 $("checkHelperBtn").addEventListener("click", checkHelper);
+udpTerminal = createUdpTerminal({ request, validLocalIP });
 // Opening a paired link can reuse an existing tab without reloading its scripts.
 window.addEventListener("hashchange", () => {
   if (consumePairingKey()) checkHelper();

@@ -3,14 +3,16 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
+const dgram=require('node:dgram');
 const {spawn,execFileSync}=require('node:child_process');
 const ROOT=path.resolve(__dirname,'..');
 const ARTIFACTS=path.join(ROOT,'test-results');
 fs.mkdirSync(ARTIFACTS,{recursive:true});
 const results=[];
-let server,helper;
+let server,helper,udpDevice;
 function cleanup(){
  if(server)server.close();
+ if(udpDevice)udpDevice.close();
  if(helper&&!helper.killed){
   if(process.platform==='win32'){try{execFileSync('taskkill',['/PID',String(helper.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}}
   else helper.kill();
@@ -33,6 +35,11 @@ const token=await new Promise((resolve,reject)=>{
  helper.once('error',reject);helper.once('exit',code=>{clearTimeout(timer);reject(new Error('Helper exited: '+code));});
 });
 const browser=await chromium.launch({channel:'msedge',headless:true});
+udpDevice=dgram.createSocket('udp4');
+await new Promise(resolve=>udpDevice.bind(0,'127.0.0.1',resolve));
+const udpPort=udpDevice.address().port;
+const udpCommands=[];
+udpDevice.on('message',(bytes,peer)=>{udpCommands.push(Buffer.from(bytes));udpDevice.send(Buffer.concat([Buffer.from('ACK:'),bytes]),peer.port,peer.address);});
 console.log('Testing Microsoft Edge '+browser.version());
 async function scenario(name,fn,options={}){
  const context=await browser.newContext({viewport:{width:1440,height:900},permissions:['clipboard-read','clipboard-write','local-network-access']});
@@ -114,7 +121,7 @@ await scenario('Pairing link updates an already open tab without a reload',async
 await scenario('Setup instructions provide installer and explicit launch link',async p=>{
  await p.route('http://127.0.0.1:47831/health',r=>r.abort());await p.locator('#checkHelperBtn').click();
  await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper unavailable');
- assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.1\.0\/HardwareCheckSetup\.exe$/);
+ assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.2\.0\/HardwareCheckSetup\.exe$/);
  assert.equal(await p.locator('.helper-launch').getAttribute('href'),'hardwarecheck-helper://open');
 },{native:true,query:'ping.html'});
 await scenario('Opening a new tab reconnects using remembered pairing',async(p,context)=>{
@@ -149,6 +156,34 @@ await scenario('Ping page tolerates rate limiting after a quick restart',async p
  await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);let n=0;
  await p.route('http://127.0.0.1:47831/ping',async route=>{n++;await route.fulfill(n===1?{status:429,json:{error:'A ping is already running'}}:{json:{ip:'127.0.0.1',ok:true,ms:0}});});
  await p.locator('#ipAddress').fill('127.0.0.1');await p.locator('#startBtn').click();await p.waitForFunction(()=>document.querySelector('#received').textContent==='1');await p.locator('#stopBtn').click();await p.waitForFunction(()=>document.querySelector('#testStatus').textContent==='Test stopped');assert.equal(await text(p,'sent'),'1');
+},{native:true,query:'ping.html#helper='+token});
+await scenario('UDP terminal receives unsolicited data, sends text and binary commands, exports and closes',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);
+ assert.equal(await p.locator('#udpRemotePort').inputValue(),'');
+ await p.locator('#udpIp').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();
+ await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
+ const endpoint=await text(p,'udpEndpoint');const localPort=Number(endpoint.match(/Laptop 127\.0\.0\.1:(\d+)/)[1]);
+ await new Promise((resolve,reject)=>udpDevice.send(Buffer.from('UNSOLICITED'),localPort,'127.0.0.1',error=>error?reject(error):resolve()));
+ await p.waitForFunction(()=>document.querySelector('#udpOutput').textContent.includes('UNSOLICITED'));assert.equal(udpCommands.length,0);
+ await p.locator('#udpCommand').fill('STATUS');await p.locator('#udpEnding').selectOption('crlf');await p.locator('#udpCommand').press('Enter');
+ await p.waitForFunction(()=>document.querySelector('#udpOutput').textContent.includes('ACK:STATUS'));assert.equal(udpCommands.at(-1).toString(),'STATUS\r\n');assert.match(await text(p,'udpOutput'),/ TX /);assert.match(await text(p,'udpOutput'),/ RX /);
+ await p.locator('#udpEncoding').selectOption('hex');await p.locator('#udpCommand').fill('00 FF 0A');await p.locator('#udpSendBtn').click();
+ await p.waitForFunction(()=>document.querySelector('#udpEndpoint').textContent.includes('RX 3'));
+ assert.deepEqual([...udpCommands.at(-1)],[0,255,10]);await p.locator('#udpHexView').check();assert.match(await text(p,'udpOutput'),/00 FF 0A/);
+ const downloadPromise=p.waitForEvent('download');await p.locator('#udpExportBtn').click();const download=await downloadPromise;assert.match(fs.readFileSync(await download.path(),'utf8'),/00 FF 0A/);
+ await p.locator('#udpEncoding').selectOption('text');await p.locator('#udpHexView').uncheck();
+ await p.screenshot({path:path.join(ARTIFACTS,'udp-desktop.png'),fullPage:true});
+ for(const width of [1024,900,768,390,320]){await p.setViewportSize({width,height:900});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'UDP layout overflow '+width);}
+ await p.setViewportSize({width:390,height:844});await p.screenshot({path:path.join(ARTIFACTS,'udp-mobile.png'),fullPage:true});
+ await p.locator('#udpClearBtn').click();assert.equal(await text(p,'udpOutput'),'');await p.waitForTimeout(500);assert.equal(await text(p,'udpOutput'),'');
+ await p.locator('#udpCloseBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP closed');assert.equal(await p.locator('#udpSendBtn').isDisabled(),true);
+},{native:true,query:'ping.html#helper='+token});
+await scenario('UDP rejects bad hex without sending or clearing the command',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);await p.locator('#udpIp').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
+ const count=udpCommands.length;await p.locator('#udpEncoding').selectOption('hex');await p.locator('#udpCommand').fill('ZZ');await p.locator('#udpSendBtn').click();await p.waitForFunction(()=>!document.querySelector('#udpError').hidden);assert.equal(await p.locator('#udpCommand').inputValue(),'ZZ');assert.equal(udpCommands.length,count);await p.locator('#udpCloseBtn').click();
+},{native:true,query:'ping.html#helper='+token});
+await scenario('Older helper keeps ping working and prompts for UDP update',async p=>{
+ await p.route('http://127.0.0.1:47831/health',r=>r.fulfill({json:{service:'hardware-check-helper',version:'1.1.0',paired:true}}));await p.locator('#checkHelperBtn').click();await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.locator('#udpOpenBtn').isDisabled(),true);assert.equal(await p.locator('#udpUpgrade').isVisible(),true);
 },{native:true,query:'ping.html#helper='+token});
 await browser.close();fs.writeFileSync(path.join(ARTIFACTS,'results.json'),JSON.stringify(results,null,2));
 console.log(`${results.filter(r=>r.status==='PASS').length}/${results.length} browser checks passed`);

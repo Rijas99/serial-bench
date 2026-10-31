@@ -1,9 +1,11 @@
 """Hardware Check portable ICMP helper. Python source; packaged with PyInstaller."""
 
 import argparse
+from collections import deque
 import ctypes
 from ctypes import wintypes
 import hmac
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
@@ -15,7 +17,7 @@ import threading
 import time
 import webbrowser
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 PORT = 47831
 SITE_ORIGIN = "https://rijas99.github.io"
 SITE_PAGE = SITE_ORIGIN + "/serial-bench/ping.html"
@@ -34,6 +36,154 @@ def validate_ip(value):
     if not any(address in network for network in LOCAL_RANGES):
         raise ValueError("Use a private LAN, link-local, or loopback IPv4 address.")
     return str(address)
+
+
+def validate_port(value, allow_auto=False):
+    if type(value) is not int or not (0 if allow_auto else 1) <= value <= 65535:
+        raise ValueError("Port must be 1–65535 (or 0 for an automatic receive port).")
+    return value
+
+
+class UdpSession:
+    MAX_BYTES = 4096
+    IDLE_SECONDS = 120
+
+    def __init__(self, address, remote_port, local_port):
+        self.address = validate_ip(address)
+        self.remote_port = validate_port(remote_port)
+        self.id = secrets.token_urlsafe(24)
+        self.lock = threading.RLock()
+        self.events = deque(maxlen=200)
+        self.sequence = self.sent = self.received = 0
+        self.last_seen = time.monotonic()
+        self.last_send = 0.0
+        self.closed = False
+        self.error = ""
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            self.socket.bind(("0.0.0.0", validate_port(local_port, allow_auto=True)))
+            self.socket.settimeout(0.25)
+            self.local_port = self.socket.getsockname()[1]
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
+                route.connect((self.address, self.remote_port))
+                self.local_ip = route.getsockname()[0]
+        except (OSError, ValueError):
+            self.socket.close()
+            raise
+        self.thread = threading.Thread(target=self.receive, daemon=True)
+        self.thread.start()
+
+    def record(self, kind, data, address, port):
+        with self.lock:
+            self.sequence += 1
+            shown = data[:self.MAX_BYTES]
+            self.events.append({"seq": self.sequence, "kind": kind,
+                "time": datetime.now(timezone.utc).isoformat(), "ip": address, "port": port,
+                "text": shown.decode("utf-8", errors="replace"), "hex": shown.hex(" ").upper(),
+                "bytes": len(data), "truncated": len(data) > self.MAX_BYTES})
+
+    def receive(self):
+        while not self.closed:
+            if time.monotonic() - self.last_seen > self.IDLE_SECONDS:
+                self.error = "UDP session expired after two minutes without a browser heartbeat."
+                self.close()
+                return
+            try:
+                data, (address, port) = self.socket.recvfrom(65535)
+                if address != self.address:
+                    continue
+                with self.lock:
+                    self.received += 1
+                    self.record("rx", data, address, port)
+            except socket.timeout:
+                continue
+            except OSError as error:
+                # Windows reports ICMP port-unreachable as WSAECONNRESET on UDP sockets.
+                if getattr(error, "winerror", None) == 10054:
+                    self.record("sys", b"Device reported UDP port unreachable; still listening.", self.address, self.remote_port)
+                    continue
+                if not self.closed:
+                    self.error = "UDP receive stopped. Close UDP and open it again."
+                    self.close()
+                return
+
+    def send(self, body):
+        value = body.get("data")
+        if not isinstance(value, str):
+            raise ValueError("Enter a command to send.")
+        encoding = body.get("encoding", "text")
+        if encoding == "hex":
+            try:
+                data = bytes.fromhex(value)
+            except ValueError:
+                raise ValueError("Hex requires complete byte pairs, for example 01 FF 0A.") from None
+        elif encoding == "text":
+            ending_name = body.get("ending", "none")
+            if not isinstance(ending_name, str):
+                raise ValueError("Choose a valid line ending.")
+            ending = {"none": "", "nl": "\n", "cr": "\r", "crlf": "\r\n"}.get(ending_name)
+            if ending is None:
+                raise ValueError("Choose a valid line ending.")
+            data = (value + ending).encode("utf-8")
+        else:
+            raise ValueError("Choose text or hex encoding.")
+        if not 0 < len(data) <= self.MAX_BYTES:
+            raise ValueError("A command must contain 1–4096 bytes.")
+        with self.lock:
+            if self.closed:
+                raise ValueError("UDP is closed. Open UDP again.")
+            if time.monotonic() - self.last_send < 0.05:
+                raise ValueError("Wait a moment before sending another command.")
+            self.socket.sendto(data, (self.address, self.remote_port))
+            self.last_send = self.last_seen = time.monotonic()
+            self.sent += 1
+            self.record("tx", data, self.address, self.remote_port)
+
+    def snapshot(self, after=0):
+        if type(after) is not int or after < 0:
+            raise ValueError("Invalid terminal cursor.")
+        with self.lock:
+            self.last_seen = time.monotonic()
+            events = [event for event in self.events if event["seq"] > after][:100]
+            return {"session": self.id, "localIp": self.local_ip, "localPort": self.local_port,
+                    "ip": self.address, "remotePort": self.remote_port, "sent": self.sent,
+                    "received": self.received, "closed": self.closed, "error": self.error,
+                    "events": events, "cursor": events[-1]["seq"] if events else after,
+                    "skipped": max(0, self.events[0]["seq"] - after - 1) if self.events else 0}
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            self.socket.close()
+
+
+class UdpTerminals:
+    def __init__(self):
+        self.sessions = {}
+        self.lock = threading.Lock()
+
+    def open(self, body):
+        with self.lock:
+            self.sessions = {key: value for key, value in self.sessions.items() if not value.closed}
+            if len(self.sessions) >= 4:
+                raise ValueError("Four UDP terminals are already open. Close one before opening another.")
+            session = UdpSession(body.get("ip"), body.get("remotePort"), body.get("localPort", 0))
+            self.sessions[session.id] = session
+            return session.snapshot()
+
+    def get(self, key):
+        with self.lock:
+            if not isinstance(key, str) or key not in self.sessions:
+                raise ValueError("UDP session not found. Open UDP again.")
+            return self.sessions[key]
+
+    def close_all(self):
+        with self.lock:
+            for session in self.sessions.values():
+                session.close()
+            self.sessions.clear()
 
 
 class IPOptions(ctypes.Structure):
@@ -95,12 +245,17 @@ class HelperServer(ThreadingHTTPServer):
             self.allowed_origins.add("http://127.0.0.1:8765")
         self.ping_lock = threading.Lock()
         self.last_ping = 0.0
+        self.udp = UdpTerminals()
         super().__init__(("127.0.0.1", port), Handler)
 
     def get_request(self):
         connection, address = super().get_request()
         connection.settimeout(3)
         return connection, address
+
+    def server_close(self):
+        self.udp.close_all()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -145,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(403, {"error": "Website origin or host is not allowed."})
         elif self.path == "/health":
             self.respond(200, {"service": "hardware-check-helper", "version": VERSION,
-                               "paired": self.authorized()})
+                               "paired": self.authorized(), "capabilities": ["ping", "udp"]})
         else:
             self.respond(404, {"error": "Unknown endpoint."})
 
@@ -153,21 +308,29 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed() or not self.authorized():
             self.respond(403, {"error": "Open the paired page from the helper window."})
             return
-        if self.path != "/ping":
+        if self.path not in ("/ping", "/udp/open", "/udp/read", "/udp/send", "/udp/close"):
             self.respond(404, {"error": "Unknown endpoint."})
             return
         try:
             if self.headers.get("Transfer-Encoding"):
                 raise ValueError("Chunked requests are not accepted.")
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 256:
+            if not 0 < length <= (32768 if self.path.startswith("/udp/") else 256):
                 raise ValueError("Invalid request size.")
             if self.headers.get_content_type() != "application/json":
                 raise ValueError("Send JSON with a local IPv4 address.")
             body = json.loads(self.rfile.read(length))
-            address = validate_ip(body.get("ip") if isinstance(body, dict) else None)
+            if not isinstance(body, dict):
+                raise ValueError("Send a JSON object.")
+            if self.path.startswith("/udp/"):
+                self.handle_udp(body)
+                return
+            address = validate_ip(body.get("ip"))
         except (ValueError, UnicodeError) as error:
             self.respond(400, {"error": str(error)})
+            return
+        except OSError as error:
+            self.respond(400, {"error": "UDP could not open or send. Check the network and make sure the receive port is free. " + str(error)})
             return
         if not self.server.ping_lock.acquire(blocking=False):
             self.respond(429, {"error": "A ping is already running on this laptop."})
@@ -182,6 +345,21 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(500, {"error": "Windows could not send ICMP. Check the network and retry."})
         finally:
             self.server.ping_lock.release()
+
+    def handle_udp(self, body):
+        after = body.get("after", 0)
+        if type(after) is not int or after < 0:
+            raise ValueError("Invalid terminal cursor.")
+        if self.path == "/udp/open":
+            result = self.server.udp.open(body)
+        else:
+            session = self.server.udp.get(body.get("session"))
+            if self.path == "/udp/send":
+                session.send(body)
+            elif self.path == "/udp/close":
+                session.close()
+            result = session.snapshot(after)
+        self.respond(200, result)
 
 
 def main():

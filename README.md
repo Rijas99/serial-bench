@@ -52,6 +52,20 @@ The separate portable **HardwareCheckHelper.exe** is also available in the relea
 
 Real ICMP requests use the Windows `IcmpSendEcho` API with a one-second timeout. The panel displays reply time, sent/received/lost packets, loss percentage, and minimum/average/maximum latency. One request runs at a time, at most once per second. Starting a new test resets the statistics. The last 100 results remain visible; statistics cover the entire current test. A device that blocks ICMP may still be online.
 
+### UDP command terminal
+
+The same Network Ping page includes a **UDP command terminal**. Upgrade to helper **1.2.0** by running the current Setup once; existing installed pairing and automatic startup are retained.
+
+1. Enter the device's IPv4 address and the UDP port configured on the device. No destination port is assumed.
+2. Enter the laptop receive port expected by the device, or leave **0** to choose a free port. Press **Open UDP**. The page shows the actual laptop IP and receive port.
+3. Send a UTF-8 text command, optionally with NL/CR/CRLF, or select **Hex bytes** for binary commands. Press **Send** or Enter.
+4. **TX** shows commands sent by the laptop. **RX** shows messages received from the selected device IP, including unsolicited messages before any command. Replies may use a different source port on that IP.
+5. Use **Hex view**, **Clear terminal**, or **Export terminal** as needed. Press **Close UDP** when finished.
+
+The device must send to the laptop's displayed IP and receive port. Allow the helper on **private networks** if Windows Firewall asks. The installer does not change firewall rules. UDP sending does not prove delivery or device execution; an RX message is needed to observe a reply. Commands are transmitted as bytes and are never run as Windows shell commands.
+
+The helper's HTTP API remains loopback-only. Each open UDP socket listens on the chosen port across the laptop's network interfaces, accepts only datagrams from the selected local device IP, and closes on request. Browser page-close cleanup is attempted; a session also expires after two minutes without a browser heartbeat. At most four terminals can be open at once. Outgoing commands are limited to 4096 bytes and 20 sends per second. Received datagrams report their full byte count but display at most 4096 bytes per packet. The helper buffers 200 events per terminal, and the page displays the last 500; skipped events are reported when the buffer fills.
+
 ### Helper access and browser security
 
 - The server binds only to `127.0.0.1:47831`, never a LAN interface.
@@ -91,4 +105,4 @@ Build the installer after building the helper:
 helper/build-env/Scripts/python -m PyInstaller --noconfirm --clean --onefile --windowed --name HardwareCheckSetup --add-data "dist/HardwareCheckHelper.exe;." helper/setup.py
 ```
 
-The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.1.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.
+The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.2.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.

@@ -48,7 +48,7 @@
           <section class="udp-terminal" aria-labelledby="udpTitle">
             <div class="udp-heading"><h2 id="udpTitle">UDP command terminal</h2><span id="udpStatus" role="status">Connect the helper to use UDP</span></div>
             <p class="udp-help">Uses the device IP above. Laptop receive ports are selected automatically.</p>
-            <p id="udpUpgrade" class="udp-help" hidden>Broadcast support needs the latest helper. <a href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.3.0/HardwareCheckSetup.exe">Run the updated setup once</a>.</p>
+            <p id="udpUpgrade" class="udp-help" hidden>Broadcast support needs the latest helper. <a href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.4.0/HardwareCheckSetup.exe">Run the updated setup once</a>.</p>
             <form id="udpOpenForm" class="udp-connection">
               <div class="field-group"><label for="udpRemotePort">Device UDP port</label><input id="udpRemotePort" type="number" min="1" max="65535" step="1" placeholder="Device port" required /></div>
               <div class="field-group"><label for="udpSendTarget">Send commands to</label><select id="udpSendTarget"><option value="device">Device IP</option><option value="broadcast">Broadcast</option></select></div>
@@ -74,16 +74,16 @@
         <aside class="ping-setup" aria-labelledby="helperTitle">
           <h2 id="helperTitle">Set up this laptop once</h2>
           <p id="helperDetail" role="status">Looking for the Windows helper on this laptop…</p>
-          <ol class="steps"><li><span class="step-num">1</span><span>Download and open Setup, then choose Install and open tester.</span></li><li><span class="step-num">2</span><span>Allow the browser’s local network permission if asked.</span></li><li><span class="step-num">3</span><span>Next time, the helper starts with Windows and this page reconnects automatically.</span></li></ol>
-          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.3.0/HardwareCheckSetup.exe">Download one-time setup</a>
+          <ol class="steps"><li><span class="step-num">1</span><span>Install the helper once using Setup below.</span></li><li><span class="step-num">2</span><span>Allow the browser’s local network permission if asked.</span></li><li><span class="step-num">3</span><span>Open this page normally. It finds and connects to the running helper automatically—no pairing link needed.</span></li></ol>
+          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.4.0/HardwareCheckSetup.exe">Download one-time setup</a>
           <a class="btn btn-ghost helper-launch" href="hardwarecheck-helper://open">Open installed helper</a>
           <button class="btn btn-ghost" id="checkHelperBtn" type="button">Check helper again</button>
-          <details><summary>What setup does</summary><p>Installs for your Windows account without administrator access. Start with Windows is enabled by default; you can change it in Setup. The helper runs near the Windows clock.</p><p>A webpage cannot silently install a program. You need to download and run Setup once, and approve browser or Windows prompts. After setup, this browser remembers its pairing.</p><p>Use the tray icon to open the tester, stop the helper, or disable auto-start. Uninstall from Windows Settings → Apps.</p><p>The download is unsigned. Only run a copy you trust from this project’s GitHub release.</p></details>
+          <details><summary>What setup does</summary><p>Installs for your Windows account without administrator access. Start with Windows is enabled by default; you can change it in Setup. The helper runs near the Windows clock.</p><p>A webpage cannot silently install a program. Run Setup once and approve browser or Windows prompts. This approved website connects automatically, including in a new browser or when saved site data has been cleared.</p><p>Use the tray icon to open the tester, stop the helper, or disable auto-start. Uninstall from Windows Settings → Apps.</p><p>The download is unsigned. Only run a copy you trust from this project’s GitHub release.</p></details>
           <details><summary>No reply or helper blocked?</summary><p>A device can be online and still block ICMP ping. Check the IP address, laptop network, device power, firewall, and Wi-Fi client isolation.</p><p>If the helper is running but cannot connect, use Check helper again and allow local network or loopback access in this site’s browser permissions. A company browser policy may block access.</p></details>
         </aside>
       </div>
     </main>
     <footer class="foot"><p>Ping runs on this laptop through the Windows helper. Device addresses and results are not sent to a remote server.</p></footer>
-    <script src="ping.js?v=5" type="module"></script>
+    <script src="ping.js?v=6" type="module"></script>
   </body>
 </html>

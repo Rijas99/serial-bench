@@ -59,7 +59,7 @@ def configure_install(directory, start_with_windows=True):
     # Deliberately ignore the URI argument: only the fixed, trusted tester page can open.
     set_value(PROTOCOL_KEY + r"\shell\open\command", "", '"%s" --open-page' % executable)
     set_value(UNINSTALL_KEY, "DisplayName", "Hardware Check Helper")
-    set_value(UNINSTALL_KEY, "DisplayVersion", "1.3.0")
+    set_value(UNINSTALL_KEY, "DisplayVersion", "1.4.0")
     set_value(UNINSTALL_KEY, "Publisher", "Hardware Check / Rijas99")
     set_value(UNINSTALL_KEY, "InstallLocation", str(directory))
     set_value(UNINSTALL_KEY, "UninstallString", '"%s" --uninstall' % (directory / "Uninstall.exe"))

@@ -115,6 +115,39 @@ class ServerTests(unittest.TestCase):
     def test_unknown_endpoint(self):
         self.assertEqual(self.request(path="/unknown")[0], 404)
 
+    def test_automatic_connection_issues_a_temporary_key_not_the_permanent_key(self):
+        status, headers, body = self.request("POST", "/connect", "{}", **{"Content-Type": "application/json"})
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(len(body["token"]), 43)
+        self.assertNotEqual(body["token"], self.server.token)
+        self.assertTrue(self.request(Authorization="Bearer " + body["token"])[2]["paired"])
+
+    def test_automatic_connection_rejects_other_websites_and_rebinding(self):
+        for headers in [{"Origin": "https://evil.example"}, {"Origin": "null"}, {"Origin": "https://rijas99.github.io.evil.example"}, {"Host": "evil.example"}]:
+            status, response_headers, body = self.request("POST", "/connect", "{}", **{"Content-Type": "application/json", **headers})
+            self.assertEqual(status, 403)
+            self.assertNotIn("token", body)
+            self.assertNotIn("Access-Control-Allow-Origin", response_headers)
+
+    def test_automatic_connection_requires_json_post(self):
+        self.assertEqual(self.request(path="/connect")[0], 404)
+        self.assertEqual(self.request("POST", "/connect", "{}", **{"Content-Type": "text/plain"})[0], 400)
+        self.assertEqual(self.request("POST", "/connect", "{", **{"Content-Type": "application/json"})[0], 400)
+
+    def test_browser_key_is_origin_bound_and_expires(self):
+        token = self.server.connect_browser(helper.SITE_ORIGIN)
+        self.assertFalse(self.server.browser_authorized(token, "https://evil.example"))
+        self.server.web_tokens[token] = (helper.SITE_ORIGIN, 0)
+        self.assertFalse(self.request(Authorization="Bearer " + token)[2]["paired"])
+
+    def test_browser_keys_are_bounded_and_allow_real_operations(self):
+        for _ in range(70):
+            token = self.server.connect_browser(helper.SITE_ORIGIN)
+        self.assertEqual(len(self.server.web_tokens), 64)
+        with patch.object(helper, "ping_once", return_value={"ip": "127.0.0.1", "ok": True, "ms": 0}):
+            self.assertEqual(self.post({"ip": "127.0.0.1"}, Authorization="Bearer " + token)[0], 200)
+
 
 if __name__ == "__main__":
     unittest.main()

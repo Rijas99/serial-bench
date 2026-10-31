@@ -18,7 +18,7 @@ import threading
 import time
 import webbrowser
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 PORT = 47831
 SITE_ORIGIN = "https://rijas99.github.io"
 SITE_PAGE = SITE_ORIGIN + "/serial-bench/ping.html"
@@ -315,6 +315,8 @@ class HelperServer(ThreadingHTTPServer):
             self.allowed_origins.add("http://127.0.0.1:8765")
         self.ping_lock = threading.Lock()
         self.last_ping = 0.0
+        self.web_tokens = {}
+        self.web_token_lock = threading.Lock()
         self.udp = UdpTerminals()
         super().__init__(("127.0.0.1", port), Handler)
 
@@ -326,6 +328,25 @@ class HelperServer(ThreadingHTTPServer):
     def server_close(self):
         self.udp.close_all()
         super().server_close()
+
+    def connect_browser(self, origin):
+        now = time.monotonic()
+        with self.web_token_lock:
+            self.web_tokens = {key: value for key, value in self.web_tokens.items() if value[1] > now}
+            if len(self.web_tokens) >= 64:
+                del self.web_tokens[min(self.web_tokens, key=lambda key: self.web_tokens[key][1])]
+            token = secrets.token_urlsafe(32)
+            self.web_tokens[token] = (origin, now + 3600)
+            return token
+
+    def browser_authorized(self, token, origin):
+        now = time.monotonic()
+        with self.web_token_lock:
+            value = self.web_tokens.get(token)
+            if not value or value[0] != origin or value[1] <= now:
+                return False
+            self.web_tokens[token] = (origin, now + 3600)
+            return True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -340,8 +361,10 @@ class Handler(BaseHTTPRequestHandler):
                 and self.headers.get("Origin") in self.server.allowed_origins)
 
     def authorized(self):
-        return hmac.compare_digest(self.headers.get("Authorization", "").encode("utf-8"),
-                                   ("Bearer " + self.server.token).encode("utf-8"))
+        authorization = self.headers.get("Authorization", "")
+        if hmac.compare_digest(authorization.encode("utf-8"), ("Bearer " + self.server.token).encode("utf-8")):
+            return True
+        return authorization.startswith("Bearer ") and self.server.browser_authorized(authorization[7:], self.headers.get("Origin"))
 
     def respond(self, code, body=None):
         payload = json.dumps(body or {}).encode("utf-8")
@@ -370,15 +393,15 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(403, {"error": "Website origin or host is not allowed."})
         elif self.path == "/health":
             self.respond(200, {"service": "hardware-check-helper", "version": VERSION,
-                               "paired": self.authorized(), "capabilities": ["ping", "udp", "udp-broadcast"]})
+                               "paired": self.authorized(), "capabilities": ["ping", "udp", "udp-broadcast", "auto-connect"]})
         else:
             self.respond(404, {"error": "Unknown endpoint."})
 
     def do_POST(self):
-        if not self.allowed() or not self.authorized():
+        if not self.allowed() or (self.path != "/connect" and not self.authorized()):
             self.respond(403, {"error": "Open the paired page from the helper window."})
             return
-        if self.path not in ("/ping", "/udp/open", "/udp/read", "/udp/send", "/udp/close"):
+        if self.path not in ("/connect", "/ping", "/udp/open", "/udp/read", "/udp/send", "/udp/close"):
             self.respond(404, {"error": "Unknown endpoint."})
             return
         try:
@@ -392,6 +415,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("Send a JSON object.")
+            if self.path == "/connect":
+                self.respond(200, {"token": self.server.connect_browser(self.headers["Origin"])})
+                return
             if self.path.startswith("/udp/"):
                 self.handle_udp(body)
                 return
@@ -451,7 +477,7 @@ def main():
     except OSError:
         if installed:
             if args.open_page:
-                webbrowser.open(SITE_PAGE + "#helper=" + key)
+                webbrowser.open(SITE_PAGE)
             return
         sys.exit("Could not start: another helper may already be running. Close it and try again.")
     paired_page = SITE_PAGE + "#helper=" + server.token
@@ -461,9 +487,9 @@ def main():
     print("To reopen the paired page, copy this private link into Chrome or Edge:", flush=True)
     print(paired_page, flush=True)
     if args.open_page or (not installed and not args.no_browser):
-        webbrowser.open(paired_page)
+        webbrowser.open(SITE_PAGE)
     if installed:
-        run_tray(server, paired_page)
+        run_tray(server, SITE_PAGE)
         return
     try:
         server.serve_forever(poll_interval=0.2)

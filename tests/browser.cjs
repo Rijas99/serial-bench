@@ -45,6 +45,9 @@ async function scenario(name,fn,options={}){
  const context=await browser.newContext({viewport:{width:1440,height:900},permissions:['clipboard-read','clipboard-write','local-network-access']});
  context.setDefaultTimeout(8000);
  const page=await context.newPage(); const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ if(options.legacy) await page.route('http://127.0.0.1:47831/health',route=>route.fulfill({json:{service:'hardware-check-helper',version:'1.3.0',paired:route.request().headers().authorization==='Bearer '+token,capabilities:['ping','udp','udp-broadcast']}}));
+ if(options.noStorage) await page.addInitScript(()=>{for(const name of ['localStorage','sessionStorage'])Object.defineProperty(window,name,{get(){throw new Error('Storage blocked');}});});
+ if(options.stale) await page.addInitScript(()=>localStorage.setItem('hardware-check-helper-key','x'.repeat(43)));
  if(!options.native) await page.addInitScript(({unsupported})=>{
  if(unsupported){delete Navigator.prototype.serial;return;}
  window.mock={writes:[],opens:[],mode:'ok'};
@@ -109,19 +112,19 @@ await scenario('Serial reader acquisition failure shows a recoverable error',asy
  await p.evaluate(()=>{const original=mock.port.open.bind(mock.port);mock.port.open=async options=>{await original(options);mock.port.readable={getReader(){throw new Error('Reader unavailable');}};};});
  await connect(p);await p.waitForFunction(()=>document.querySelector('#statusText').textContent==='Read failed');assert.equal(await p.locator('#sendBtn').isDisabled(),true);
 });
-await scenario('Ping page detects unpaired helper and prevents starting',async p=>{
- await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper found — pairing needed');assert.equal(await p.locator('#startBtn').isDisabled(),true);
-},{native:true,query:'ping.html'});
+await scenario('Older helper offers an update for automatic connection',async p=>{
+ await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper found — update for auto-connect');assert.equal(await p.locator('#startBtn').isDisabled(),true);
+},{native:true,legacy:true,query:'ping.html'});
 await scenario('Pairing link updates an already open tab without a reload',async p=>{
- await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper found — pairing needed');
+ await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper found — update for auto-connect');
  await p.evaluate(key=>location.hash='helper='+key,token);
  await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);
  assert.equal(await p.evaluate(()=>location.hash),'');
-},{native:true,query:'ping.html'});
+},{native:true,legacy:true,query:'ping.html'});
 await scenario('Setup instructions provide installer and explicit launch link',async p=>{
  await p.route('http://127.0.0.1:47831/health',r=>r.abort());await p.locator('#checkHelperBtn').click();
  await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper unavailable');
- assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.3\.0\/HardwareCheckSetup\.exe$/);
+ assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.4\.0\/HardwareCheckSetup\.exe$/);
  assert.equal(await p.locator('.helper-launch').getAttribute('href'),'hardwarecheck-helper://open');
 },{native:true,query:'ping.html'});
 await scenario('Opening a new tab reconnects using remembered pairing',async(p,context)=>{
@@ -129,6 +132,16 @@ await scenario('Opening a new tab reconnects using remembered pairing',async(p,c
  const next=await context.newPage();await next.goto('http://127.0.0.1:8765/ping.html');
  await next.waitForFunction(()=>!document.querySelector('#startBtn').disabled);await next.close();
 },{native:true,query:'ping.html#helper='+token});
+await scenario('Clean browser connects automatically without a private link',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.evaluate(()=>location.hash),'');assert.notEqual(await p.evaluate(()=>localStorage.getItem('hardware-check-helper-key')),token);
+ await p.locator('#ipAddress').fill('127.0.0.1');await p.locator('#startBtn').click();await p.waitForFunction(()=>Number(document.querySelector('#received').textContent)>=1);await p.locator('#stopBtn').click();
+},{native:true,query:'ping.html'});
+await scenario('Automatic connection works when browser storage is blocked',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.locator('#udpOpenBtn').isDisabled(),false);
+},{native:true,noStorage:true,query:'ping.html'});
+await scenario('Stale saved credential is replaced automatically',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.notEqual(await p.evaluate(()=>localStorage.getItem('hardware-check-helper-key')),'x'.repeat(43));
+},{native:true,stale:true,query:'ping.html'});
 await scenario('Ping page pairs with actual helper, validates IP, sends real ICMP, stops and restarts',async p=>{
  await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.evaluate(()=>location.hash),'');
  for(const invalid of ['8.8.8.8','999.1.1.1','localhost','192.168.01.1']){await p.locator('#ipAddress').fill(invalid);await p.locator('#startBtn').click();assert.equal(await p.locator('#ipError').isVisible(),true);}

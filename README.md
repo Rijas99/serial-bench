@@ -42,9 +42,9 @@ Use **Latest only** to show one live value, or **Pause** to freeze the screen.
 Open [Network Ping](https://rijas99.github.io/serial-bench/ping.html).
 
 1. Download **HardwareCheckSetup.exe** from the page, open it on your Windows laptop, and choose **Install and open tester**. Close an older portable helper window first.
-2. Use the paired page opened by the helper in Chrome or Edge; allow local network / loopback access if the browser asks. If another browser opens, copy the private link from the helper window into Chrome or Edge.
+2. Open the Network Ping page normally in Chrome or Edge; allow local network / loopback access if the browser asks. It connects to the running helper automatically, without a private link or manual pairing.
 3. Enter the device's local IPv4 address and press **Start ping**. Press **Stop** to finish; the current packet completes before stopping.
-4. The helper runs in the system tray near the clock. On later visits, this browser remembers its pairing and reconnects automatically. If stopped, use **Open installed helper** on the page.
+4. The helper runs in the system tray near the clock. Later visits and new browsers connect automatically, even after site storage is cleared. If it was stopped, use **Open installed helper** on the page or launch its installed executable again.
 
 Setup supports Windows 10/11 x64 and requires no Python installation or administrator rights. It installs under `%LOCALAPPDATA%/HardwareCheckHelper` for the current user, with **Start with Windows** selected by default. It registers a `hardwarecheck-helper://open` link, which only opens the fixed tester page. The tray menu can open the tester, disable auto-start, or exit. Uninstall through Windows Settings > Apps. The downloads are unsigned, so Windows may show a security prompt. Each laptop needs its own setup. A webpage cannot silently install software or bypass browser prompts.
 
@@ -54,7 +54,7 @@ Real ICMP requests use the Windows `IcmpSendEcho` API with a one-second timeout.
 
 ### UDP command terminal
 
-The same Network Ping page includes a **UDP command terminal**. Upgrade to helper **1.3.0** by running the current Setup once; existing installed pairing and automatic startup are retained.
+The same Network Ping page includes a **UDP command terminal**. Upgrade to helper **1.4.0** by running the current Setup once; existing settings and automatic startup are retained.
 
 1. Enter the device's IPv4 address once at the top. Both ping and UDP use it. In the terminal, enter only the UDP port configured on the device.
 2. Choose **Device IP** or **Broadcast** for sending, then press **Open UDP**. Reply and broadcast receive ports are configured automatically. There is no second IP input or laptop-port input.
@@ -71,10 +71,12 @@ The helper's HTTP API remains loopback-only. UDP listeners accept the selected I
 ### Helper access and browser security
 
 - The server binds only to `127.0.0.1:47831`, never a LAN interface.
-- Production requests require the exact website origin `https://rijas99.github.io`, the exact loopback Host header, and a random 256-bit pairing key for ping operations. The installed helper retains its key in the current user's application folder, so browser pairing survives sign-in/restarts. Uninstall removes it. Portable keys change on each launch.
-- GitHub Pages repositories share an origin. The secret pairing key is needed in addition to CORS; repository paths are not browser security boundaries. All content on this account's Pages origin must be trusted because browser storage is shared across it.
-- The helper opens only `/serial-bench/ping.html#helper=...`. The page removes the fragment immediately and remembers the key in browser local storage (or tab/memory if storage is disabled). Keep the paired link private. Clearing site data removes browser pairing; **Open installed helper** restores it.
-- Health discovery reveals only the helper version and whether the supplied key is valid. No endpoint returns the key. Responses are not cached.
+- Production requests require the exact website origin `https://rijas99.github.io` and exact loopback Host header. Ping/UDP operations also require an authorized bearer credential.
+- A JSON POST to `/connect` from that approved origin creates a random 256-bit temporary browser credential. Other origins, missing/opaque origins, wrong Host headers, GET requests, and form-style requests are rejected. The installed permanent key is never returned by this endpoint.
+- Browser credentials are scoped to their origin and expire after one hour without activity. There are at most 64 credentials in memory. The page automatically obtains a new one when storage is empty, blocked, stale, or the helper has restarted. No external-app navigation is needed while the helper is running.
+- GitHub Pages repositories share an origin; repository paths are not security boundaries. All content on this account's Pages origin must be trusted. Automatic connection authorizes that configured origin, not every website on GitHub Pages.
+- The helper opens the ordinary `/serial-bench/ping.html` URL. Legacy private links remain supported for older clients; their fragments are removed immediately. Browser storage is optional—an in-memory credential works when storage is disabled.
+- Health discovery reveals only the helper version, capabilities, and whether the supplied credential is valid. Responses are not cached. The permanent installed key remains under the current user's application folder and is removed on uninstall.
 - Only literal private LAN, link-local, or loopback IPv4 addresses are accepted. No DNS lookups, shell commands, public targets, or scan endpoints.
 - Browser local network permission remains under user / administrator control. Denial or an organization browser policy cannot be bypassed by the helper.
 - Addresses and results go only to the laptop's loopback helper. No analytics or remote result uploads are included.
@@ -107,4 +109,4 @@ Build the installer after building the helper:
 helper/build-env/Scripts/python -m PyInstaller --noconfirm --clean --onefile --windowed --name HardwareCheckSetup --add-data "dist/HardwareCheckHelper.exe;." helper/setup.py
 ```
 
-The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.3.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.
+The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.4.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.

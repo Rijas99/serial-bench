@@ -4,13 +4,20 @@ const $ = (id) => document.getElementById(id);
 const HELPER = "http://127.0.0.1:47831";
 const KEY = "hardware-check-helper-key";
 let token = "";
-try { token = localStorage.getItem(KEY) || sessionStorage.getItem(KEY) || ""; } catch { /* Storage may be disabled. */ }
+for (const storage of ["localStorage", "sessionStorage"]) {
+  try { token ||= window[storage].getItem(KEY) || ""; } catch { /* Storage may be disabled. */ }
+}
+function rememberToken(value) {
+  token = value;
+  for (const storage of ["localStorage", "sessionStorage"]) {
+    try { window[storage].setItem(KEY, token); } catch { /* In-memory connection still works. */ }
+  }
+}
 function consumePairingKey() {
   const fragmentKey = new URLSearchParams(location.hash.slice(1)).get("helper");
   const valid = fragmentKey && /^[A-Za-z0-9_-]{43}$/.test(fragmentKey);
   if (valid) {
-    token = fragmentKey;
-    try { localStorage.setItem(KEY, token); sessionStorage.setItem(KEY, token); } catch { /* In-memory pairing still works. */ }
+    rememberToken(fragmentKey);
   }
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   return valid;
@@ -64,14 +71,21 @@ async function checkHelper() {
   $("checkHelperBtn").disabled = true;
   try {
     const data = await request("/health");
-    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0", "1.2.0", "1.3.0"].includes(data.version)) {
+    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"].includes(data.version)) {
       throw new Error("Unexpected helper version. Download the current helper.");
     }
     supportsUdp = data.capabilities?.includes("udp-broadcast") === true;
-    if (data.paired === true) {
+    let connected = data.paired === true;
+    if (!connected && data.capabilities?.includes("auto-connect")) {
+      const session = await request("/connect", {});
+      if (!/^[A-Za-z0-9_-]{43}$/.test(session.token || "")) throw new Error("Invalid helper connection response.");
+      rememberToken(session.token);
+      connected = (await request("/health")).paired === true;
+    }
+    if (connected) {
       showHelper(true, "Helper connected — ready to ping", "Connected to this laptop. Enter a device IP and start the test.");
     } else {
-      showHelper(false, "Helper found — pairing needed", "Press Open installed helper to pair this browser automatically. If you use the older portable helper, open its private link instead.");
+      showHelper(false, "Helper found — update for auto-connect", "Install the latest helper once to connect automatically from this browser. Older helpers can still use their private link.");
     }
   } catch {
     showHelper(false, "Helper unavailable", "First time here? Install the helper below once. Already installed? Press Open installed helper. Allow local network / loopback access if your browser asks; this page will connect automatically.");

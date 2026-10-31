@@ -49,7 +49,7 @@ def main():
             source = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "HardwareCheckHelper.exe"
             executable = windows_setup.install_files(source, sys.executable, startup.get())
             windows_setup.launch(executable)
-            messagebox.showinfo("Setup complete", "The helper is installed. Use the paired tester page it opens.\n\nNext time, the helper starts automatically with Windows.\nYou can uninstall it from Windows Settings > Apps.")
+            messagebox.showinfo("Setup complete", "The helper is installed. The Network Ping page connects automatically.\n\nNext time, the helper starts automatically with Windows.\nYou can uninstall it from Windows Settings > Apps.")
             root.destroy()
         except (OSError, ValueError) as error:
             status.config(text="Setup did not finish.")

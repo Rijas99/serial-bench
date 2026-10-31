@@ -33,6 +33,11 @@
       </div>
     </header>
 
+    <nav class="tool-nav" aria-label="Hardware tests">
+      <a href="./" aria-current="page">USB Check</a>
+      <a href="ping.html">Network Ping</a>
+    </nav>
+
     <main class="shell">
       <p class="hint" id="compatHint" hidden></p>
 
@@ -81,6 +86,7 @@
               <input
                 type="text"
                 id="expectText"
+                maxlength="256"
                 placeholder="e.g. FLAP or OK"
                 autocomplete="off"
                 spellcheck="false"
@@ -209,6 +215,6 @@
       </p>
     </footer>
 
-    <script src="app.js?v=3" type="module"></script>
+    <script src="app.js?v=4" type="module"></script>
   </body>
 </html>

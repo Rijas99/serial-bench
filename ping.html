@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Test local device connectivity with real ICMP ping through the Hardware Check Windows helper." />
+    <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' http://127.0.0.1:47831; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>Network Ping Test — Hardware Check</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="ping.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <header class="top">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div><h1>Hardware Check</h1><p class="tagline">Test your devices from the laptop you work on</p></div>
+      </div>
+      <div class="status-pill" id="helperPill" data-state="idle"><span class="status-dot" aria-hidden="true"></span><span id="helperStatus" role="status">Checking helper…</span></div>
+    </header>
+    <nav class="tool-nav" aria-label="Hardware tests"><a href="./">USB Check</a><a href="ping.html" aria-current="page">Network Ping</a></nav>
+    <main class="shell ping-shell">
+      <section class="ping-intro" aria-labelledby="pingTitle">
+        <h2 id="pingTitle">Network Ping Test</h2>
+        <p>Check a device on your local Wi-Fi or Ethernet with real ICMP ping.</p>
+      </section>
+      <div class="ping-workspace">
+        <section class="ping-main" aria-label="Ping controls and results">
+          <form id="pingForm" class="ping-controls">
+            <div class="field-group"><label for="ipAddress">Device IP address</label><input id="ipAddress" name="ip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.1.20" maxlength="15" aria-describedby="ipHelp ipError" required /></div>
+            <button class="btn btn-primary" id="startBtn" type="submit" disabled>Start ping</button>
+            <button class="btn btn-ghost" id="stopBtn" type="button" disabled>Stop</button>
+            <p class="ping-input-help" id="ipHelp">Use a local IPv4 address. One ping per second, with a 1-second timeout.</p>
+            <p class="ping-error" id="ipError" role="alert" hidden></p>
+          </form>
+          <section class="ping-results" aria-label="Live ping statistics">
+            <div class="ping-live"><div><h3 id="testStatus" role="status">Ready for a device</h3><p id="testDetail">Connect the helper, enter the device IP, then press Start ping.</p></div><p class="ping-latency"><span id="lastMs">—</span><span class="unit">ms</span></p></div>
+            <dl class="ping-stats">
+              <div><dt>Sent</dt><dd id="sent">0</dd></div><div><dt>Received</dt><dd id="received">0</dd></div><div><dt>Lost</dt><dd id="lost">0</dd></div><div><dt>Packet loss</dt><dd id="loss">0%</dd></div>
+              <div><dt>Minimum</dt><dd id="minMs">—</dd></div><div><dt>Average</dt><dd id="avgMs">—</dd></div><div><dt>Maximum</dt><dd id="maxMs">—</dd></div>
+            </dl>
+            <div class="ping-table-wrap"><table class="ping-table"><caption>Live replies <span>Newest first · last 100 packets</span></caption><thead><tr><th scope="col">Time</th><th scope="col">Device</th><th scope="col">Result</th><th scope="col">Reply time</th></tr></thead><tbody id="replyRows"><tr id="emptyReplies"><td colspan="4">No packets sent yet.</td></tr></tbody></table></div>
+          </section>
+        </section>
+        <aside class="ping-setup" aria-labelledby="helperTitle">
+          <h2 id="helperTitle">Connect this laptop</h2>
+          <p id="helperDetail" role="status">Looking for the Windows helper on this laptop…</p>
+          <ol class="steps"><li><span class="step-num">1</span><span>Download and open the Windows helper below.</span></li><li><span class="step-num">2</span><span>Use the paired page it opens in Chrome or Edge. Keep the helper window open.</span></li><li><span class="step-num">3</span><span>Allow the browser’s local network permission if asked.</span></li></ol>
+          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.0.0/HardwareCheckHelper.exe">Download Windows helper</a>
+          <button class="btn btn-ghost" id="checkHelperBtn" type="button">Check helper again</button>
+          <details><summary>About the helper</summary><p>Portable for Windows 10/11, 64-bit. No installation or administrator access needed. Each laptop runs its own helper. Close its window to stop it.</p><p>The helper opens a private pairing link. If your default browser is not Chrome or Edge, copy that link from the helper window into one of them.</p><p>The download is unsigned. Windows may show a security prompt. Only run a copy you trust from this project’s GitHub release.</p></details>
+          <details><summary>No reply or helper blocked?</summary><p>A device can be online and still block ICMP ping. Check the IP address, laptop network, device power, firewall, and Wi-Fi client isolation.</p><p>If the helper is running but cannot connect, use Check helper again and allow local network or loopback access in this site’s browser permissions. A company browser policy may block access.</p></details>
+        </aside>
+      </div>
+    </main>
+    <footer class="foot"><p>Ping runs on this laptop through the Windows helper. Device addresses and results are not sent to a remote server.</p></footer>
+    <script src="ping.js?v=1" type="module"></script>
+  </body>
+</html>

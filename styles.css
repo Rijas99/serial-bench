@@ -52,11 +52,32 @@ body {
 }
 
 .top,
+.tool-nav,
 .shell,
 .foot {
   position: relative;
   z-index: 1;
 }
+
+.tool-nav {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.4rem clamp(1rem, 4vw, 2.5rem) 0.8rem;
+}
+
+.tool-nav a {
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.tool-nav a[aria-current="page"] { background: var(--ink); color: white; }
+.tool-nav a:hover:not([aria-current="page"]) { background: var(--panel); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+::selection { background: #b8e6d4; color: var(--ink); }
 
 .top {
   display: flex;

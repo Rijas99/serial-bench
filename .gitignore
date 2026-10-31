@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.pyc
+helper/build/
+helper/build-env/
+helper/dist/
+dist/
+build/
+*.spec
+test-results/
+_site/

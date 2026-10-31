@@ -69,6 +69,8 @@ let reconnectTimer = null;
 let reconnectAttempt = 0;
 let intentionalClose = false;
 let rxBuffer = "";
+let rxFlushTimer = null;
+let expectTail = "";
 /** @type {{ usbVendorId?: number, usbProductId?: number } | null} */
 let lastPortInfo = null;
 
@@ -160,9 +162,11 @@ function onSerialLine(line) {
   }
 
   const needle = getExpectNeedle();
-  if (needle && line.toLowerCase().includes(needle)) {
+  const matchText = expectTail + line.toLowerCase();
+  if (needle && matchText.includes(needle)) {
     matchedExpect = true;
   }
+  expectTail = needle.length > 1 ? matchText.slice(-(needle.length - 1)).slice(-256) : "";
 
   if (matchedExpect) {
     setHealth(
@@ -192,19 +196,25 @@ function ingestText(chunk) {
 
   for (const line of parts) {
     appendLine("rx", line);
-    onSerialLine(line);
   }
+  // Devices may send readings without a newline; paint the partial line after a short idle.
+  clearTimeout(rxFlushTimer);
+  if (rxBuffer.length > 65536) flushRxBuffer();
+  else if (rxBuffer) rxFlushTimer = setTimeout(flushRxBuffer, 100);
 }
 
 function flushRxBuffer() {
+  clearTimeout(rxFlushTimer);
+  rxFlushTimer = null;
   if (!rxBuffer) return;
   const leftover = rxBuffer;
   rxBuffer = "";
   appendLine("rx", leftover);
-  onSerialLine(leftover);
 }
 
 function clearRxBuffer() {
+  clearTimeout(rxFlushTimer);
+  rxFlushTimer = null;
   rxBuffer = "";
 }
 
@@ -348,19 +358,19 @@ function paintRx() {
   updateByteCount();
   if (!chunks.length) return;
 
+  // Health and expected-text matching use decoded bytes, independently of the display mode.
+  let text = "";
+  for (const chunk of chunks) text += textDecoder.decode(chunk, { stream: true });
+  onSerialLine(text);
+
   if (els.hexMode.checked) {
     for (const chunk of chunks) {
       const hex = bytesToHex(chunk);
       appendLine("hex", hex);
-      onSerialLine(hex);
     }
     return;
   }
 
-  let text = "";
-  for (const chunk of chunks) {
-    text += textDecoder.decode(chunk, { stream: true });
-  }
   ingestText(text);
 }
 
@@ -509,6 +519,7 @@ async function openPort(selectedPort) {
   reconnectAttempt = 0;
   overrunLogCount = 0;
   textDecoder = new TextDecoder();
+  expectTail = "";
   clearRxBuffer();
   pendingRx = [];
   if (rxPaint) {
@@ -543,6 +554,7 @@ async function openPort(selectedPort) {
 }
 
 async function readLoop() {
+  let failure = "";
   try {
     while (keepReading && port?.readable) {
       reader = port.readable.getReader();
@@ -550,7 +562,10 @@ async function readLoop() {
       try {
         while (keepReading) {
           const { value, done } = await reader.read();
-          if (done) return;
+          if (done) {
+            if (keepReading && !intentionalClose) failure = "The device stopped sending data.";
+            return;
+          }
           if (value?.length) noteRx(value);
         }
       } catch (err) {
@@ -558,6 +573,7 @@ async function readLoop() {
         if (resume) {
           noteOverrun();
         } else if (keepReading && !intentionalClose) {
+          failure = err.message || String(err);
           appendLine("sys", `Read error: ${err.message || err}`);
         }
       } finally {
@@ -570,14 +586,27 @@ async function readLoop() {
       }
       if (!resume) break;
       if (overrunLogCount > 40) {
+        failure = "Repeated buffer overruns stopped the reader.";
         appendLine("sys", "Stopped reading after repeated buffer overruns");
         break;
       }
       await new Promise((r) => setTimeout(r, overrunLogCount > 5 ? 20 : 0));
     }
+  } catch (err) {
+    if (keepReading && !intentionalClose) failure = err.message || String(err);
   } finally {
     flushPendingRxSync();
     flushRxBuffer();
+    // Let openPort finish its initial waiting UI if acquiring the reader failed synchronously.
+    if (failure) await Promise.resolve();
+    if (failure && keepReading && !intentionalClose) {
+      keepReading = false;
+      clearNoDataTimer();
+      els.sendBtn.disabled = true;
+      els.sendInput.disabled = true;
+      setStatus("error", "Read failed");
+      setHealth("error", "Device read stopped", `${failure} Press Disconnect, then Connect device to try again.`);
+    }
   }
 }
 
@@ -1009,8 +1038,10 @@ function wireEvents() {
   });
 
   els.expectText.addEventListener("change", () => {
-    if (!port || !receivedAnyData) return;
+    expectTail = "";
+    if (!port || !receivedAnyData || !keepReading) return;
     matchedExpect = false;
+    setStatus("connected", "Responding");
     const needle = getExpectNeedle();
     if (!needle) {
       setHealth(

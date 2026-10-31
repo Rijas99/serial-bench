@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
 import secrets
+import select
 import socket
 import struct
 import sys
@@ -17,7 +18,7 @@ import threading
 import time
 import webbrowser
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 PORT = 47831
 SITE_ORIGIN = "https://rijas99.github.io"
 SITE_PAGE = SITE_ORIGIN + "/serial-bench/ping.html"
@@ -44,13 +45,49 @@ def validate_port(value, allow_auto=False):
     return value
 
 
+class IPAddressRow(ctypes.Structure):
+    _fields_ = [(name, wintypes.DWORD) for name in ("address", "index", "mask", "broadcast", "reassembly")] + [
+        ("unused", wintypes.WORD), ("kind", wintypes.WORD)]
+
+
+def broadcast_address(local_ip):
+    """Use the actual Windows interface mask rather than assuming a /24 network."""
+    if sys.platform != "win32":
+        return "255.255.255.255"
+    api = ctypes.WinDLL("iphlpapi.dll", use_last_error=True)
+    api.GetIpAddrTable.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), wintypes.BOOL]
+    api.GetIpAddrTable.restype = wintypes.DWORD
+    size = wintypes.DWORD(0)
+    if api.GetIpAddrTable(None, ctypes.byref(size), False) != 122:
+        return "255.255.255.255"
+    buffer = ctypes.create_string_buffer(size.value)
+    if api.GetIpAddrTable(buffer, ctypes.byref(size), False) != 0:
+        return "255.255.255.255"
+    count = wintypes.DWORD.from_buffer(buffer).value
+    for index in range(count):
+        offset = ctypes.sizeof(wintypes.DWORD) + index * ctypes.sizeof(IPAddressRow)
+        if offset + ctypes.sizeof(IPAddressRow) > len(buffer):
+            break
+        row = IPAddressRow.from_buffer(buffer, offset)
+        address = socket.inet_ntoa(struct.pack("=I", row.address))
+        if address == local_ip:
+            mask = socket.inet_ntoa(struct.pack("=I", row.mask))
+            return str(ipaddress.IPv4Network((local_ip, mask), strict=False).broadcast_address)
+    return "255.255.255.255"
+
+
 class UdpSession:
     MAX_BYTES = 4096
     IDLE_SECONDS = 120
 
-    def __init__(self, address, remote_port, local_port):
+    def __init__(self, address, remote_port, local_port, receive_all=False):
         self.address = validate_ip(address)
         self.remote_port = validate_port(remote_port)
+        if type(receive_all) is not bool:
+            raise ValueError("Receive-all must be true or false.")
+        self.receive_all = receive_all
+        self.broadcast_port = None
+        self.broadcast_warning = ""
         self.id = secrets.token_urlsafe(24)
         self.lock = threading.RLock()
         self.events = deque(maxlen=200)
@@ -60,15 +97,34 @@ class UdpSession:
         self.closed = False
         self.error = ""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sockets = [self.socket]
         try:
             if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
                 self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
             self.socket.bind(("0.0.0.0", validate_port(local_port, allow_auto=True)))
-            self.socket.settimeout(0.25)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            self.socket.setblocking(False)
             self.local_port = self.socket.getsockname()[1]
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
                 route.connect((self.address, self.remote_port))
                 self.local_ip = route.getsockname()[0]
+            self.broadcast_address = broadcast_address(self.local_ip)
+            if receive_all:
+                if self.local_port == self.remote_port:
+                    self.broadcast_port = self.local_port
+                else:
+                    listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    try:
+                        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                            listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                        listener.bind(("0.0.0.0", self.remote_port))
+                        listener.setblocking(False)
+                        self.sockets.append(listener)
+                        self.broadcast_port = self.remote_port
+                    except OSError:
+                        listener.close()
+                        self.broadcast_warning = ("Broadcast receive port %s is already in use or unavailable. "
+                            "Close the other app and reopen UDP. Replies to the automatic port still work.") % self.remote_port
         except (OSError, ValueError):
             self.socket.close()
             raise
@@ -91,15 +147,22 @@ class UdpSession:
                 self.close()
                 return
             try:
-                data, (address, port) = self.socket.recvfrom(65535)
-                if address != self.address:
-                    continue
-                with self.lock:
-                    self.received += 1
-                    self.record("rx", data, address, port)
-            except socket.timeout:
+                ready, _, _ = select.select(self.sockets, [], [], 0.25)
+                for listener in ready:
+                    data, (address, port) = listener.recvfrom(65535)
+                    if address != self.address:
+                        if not self.receive_all:
+                            continue
+                        try:
+                            validate_ip(address)
+                        except ValueError:
+                            continue
+                    with self.lock:
+                        self.received += 1
+                        self.record("rx", data, address, port)
+            except BlockingIOError:
                 continue
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 # Windows reports ICMP port-unreachable as WSAECONNRESET on UDP sockets.
                 if getattr(error, "winerror", None) == 10054:
                     self.record("sys", b"Device reported UDP port unreachable; still listening.", self.address, self.remote_port)
@@ -131,15 +194,19 @@ class UdpSession:
             raise ValueError("Choose text or hex encoding.")
         if not 0 < len(data) <= self.MAX_BYTES:
             raise ValueError("A command must contain 1–4096 bytes.")
+        broadcast = body.get("broadcast", False)
+        if type(broadcast) is not bool:
+            raise ValueError("Broadcast must be true or false.")
         with self.lock:
             if self.closed:
                 raise ValueError("UDP is closed. Open UDP again.")
             if time.monotonic() - self.last_send < 0.05:
                 raise ValueError("Wait a moment before sending another command.")
-            self.socket.sendto(data, (self.address, self.remote_port))
+            destination = self.broadcast_address if broadcast else self.address
+            self.socket.sendto(data, (destination, self.remote_port))
             self.last_send = self.last_seen = time.monotonic()
             self.sent += 1
-            self.record("tx", data, self.address, self.remote_port)
+            self.record("tx", data, destination, self.remote_port)
 
     def snapshot(self, after=0):
         if type(after) is not int or after < 0:
@@ -150,13 +217,16 @@ class UdpSession:
             return {"session": self.id, "localIp": self.local_ip, "localPort": self.local_port,
                     "ip": self.address, "remotePort": self.remote_port, "sent": self.sent,
                     "received": self.received, "closed": self.closed, "error": self.error,
+                    "receiveAll": self.receive_all, "broadcastAddress": self.broadcast_address,
+                    "broadcastPort": self.broadcast_port, "broadcastWarning": self.broadcast_warning,
                     "events": events, "cursor": events[-1]["seq"] if events else after,
                     "skipped": max(0, self.events[0]["seq"] - after - 1) if self.events else 0}
 
     def close(self):
         with self.lock:
             self.closed = True
-            self.socket.close()
+            for listener in self.sockets:
+                listener.close()
 
 
 class UdpTerminals:
@@ -169,7 +239,7 @@ class UdpTerminals:
             self.sessions = {key: value for key, value in self.sessions.items() if not value.closed}
             if len(self.sessions) >= 4:
                 raise ValueError("Four UDP terminals are already open. Close one before opening another.")
-            session = UdpSession(body.get("ip"), body.get("remotePort"), body.get("localPort", 0))
+            session = UdpSession(body.get("ip"), body.get("remotePort"), body.get("localPort", 0), body.get("receiveAll", False))
             self.sessions[session.id] = session
             return session.snapshot()
 
@@ -300,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(403, {"error": "Website origin or host is not allowed."})
         elif self.path == "/health":
             self.respond(200, {"service": "hardware-check-helper", "version": VERSION,
-                               "paired": self.authorized(), "capabilities": ["ping", "udp"]})
+                               "paired": self.authorized(), "capabilities": ["ping", "udp", "udp-broadcast"]})
         else:
             self.respond(404, {"error": "Unknown endpoint."})
 

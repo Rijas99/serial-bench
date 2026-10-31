@@ -121,7 +121,7 @@ await scenario('Pairing link updates an already open tab without a reload',async
 await scenario('Setup instructions provide installer and explicit launch link',async p=>{
  await p.route('http://127.0.0.1:47831/health',r=>r.abort());await p.locator('#checkHelperBtn').click();
  await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper unavailable');
- assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.2\.0\/HardwareCheckSetup\.exe$/);
+ assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.3\.0\/HardwareCheckSetup\.exe$/);
  assert.equal(await p.locator('.helper-launch').getAttribute('href'),'hardwarecheck-helper://open');
 },{native:true,query:'ping.html'});
 await scenario('Opening a new tab reconnects using remembered pairing',async(p,context)=>{
@@ -160,7 +160,8 @@ await scenario('Ping page tolerates rate limiting after a quick restart',async p
 await scenario('UDP terminal receives unsolicited data, sends text and binary commands, exports and closes',async p=>{
  await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);
  assert.equal(await p.locator('#udpRemotePort').inputValue(),'');
- await p.locator('#udpIp').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();
+ assert.equal(await p.locator('#udpIp').count(),0);assert.equal(await p.locator('#udpLocalPort').count(),0);
+ await p.locator('#ipAddress').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();
  await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
  const endpoint=await text(p,'udpEndpoint');const localPort=Number(endpoint.match(/Laptop 127\.0\.0\.1:(\d+)/)[1]);
  await new Promise((resolve,reject)=>udpDevice.send(Buffer.from('UNSOLICITED'),localPort,'127.0.0.1',error=>error?reject(error):resolve()));
@@ -179,11 +180,26 @@ await scenario('UDP terminal receives unsolicited data, sends text and binary co
  await p.locator('#udpCloseBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP closed');assert.equal(await p.locator('#udpSendBtn').isDisabled(),true);
 },{native:true,query:'ping.html#helper='+token});
 await scenario('UDP rejects bad hex without sending or clearing the command',async p=>{
- await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);await p.locator('#udpIp').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
+ await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);await p.locator('#ipAddress').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
  const count=udpCommands.length;await p.locator('#udpEncoding').selectOption('hex');await p.locator('#udpCommand').fill('ZZ');await p.locator('#udpSendBtn').click();await p.waitForFunction(()=>!document.querySelector('#udpError').hidden);assert.equal(await p.locator('#udpCommand').inputValue(),'ZZ');assert.equal(udpCommands.length,count);await p.locator('#udpCloseBtn').click();
 },{native:true,query:'ping.html#helper='+token});
 await scenario('Older helper keeps ping working and prompts for UDP update',async p=>{
  await p.route('http://127.0.0.1:47831/health',r=>r.fulfill({json:{service:'hardware-check-helper',version:'1.1.0',paired:true}}));await p.locator('#checkHelperBtn').click();await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.locator('#udpOpenBtn').isDisabled(),true);assert.equal(await p.locator('#udpUpgrade').isVisible(),true);
+},{native:true,query:'ping.html#helper='+token});
+await scenario('Shared IP stays fixed for UDP while ping starts and stops',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);await p.locator('#ipAddress').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(udpPort));await p.locator('#udpOpenBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
+ assert.equal(await p.locator('#ipAddress').evaluate(el=>el.readOnly),true);await p.locator('#startBtn').click();await p.waitForFunction(()=>Number(document.querySelector('#received').textContent)>=1);await p.locator('#stopBtn').click();await p.waitForFunction(()=>document.querySelector('#testStatus').textContent==='Test stopped');assert.equal(await p.locator('#ipAddress').evaluate(el=>el.readOnly),true);
+ await p.locator('#udpCloseBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP closed');assert.equal(await p.locator('#ipAddress').evaluate(el=>el.readOnly),false);
+},{native:true,query:'ping.html#helper='+token});
+await scenario('Broadcast send mode uses the shared IP and records a real loopback broadcast',async p=>{
+ await p.waitForFunction(()=>!document.querySelector('#udpOpenBtn').disabled);
+ const receiver=dgram.createSocket('udp4');await new Promise(resolve=>receiver.bind(0,'0.0.0.0',resolve));
+ try {
+  await p.locator('#ipAddress').fill('127.0.0.1');await p.locator('#udpRemotePort').fill(String(receiver.address().port));await p.locator('#udpSendTarget').selectOption('broadcast');await p.locator('#udpOpenBtn').click();await p.waitForFunction(()=>document.querySelector('#udpStatus').textContent==='UDP open — listening');
+  const packet=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('No broadcast packet received')),5000);receiver.once('message',b=>{clearTimeout(timer);resolve(b);});});
+  await p.locator('#udpCommand').fill('TEST-BROADCAST');await p.locator('#udpSendBtn').click();assert.equal((await packet).toString(),'TEST-BROADCAST');await p.waitForFunction(()=>document.querySelector('#udpOutput').textContent.includes('127.255.255.255'));
+  assert.equal(await p.locator('#udpReceiveAll').isChecked(),true);await p.locator('#udpCloseBtn').click();
+ } finally {receiver.close();}
 },{native:true,query:'ping.html#helper='+token});
 await browser.close();fs.writeFileSync(path.join(ARTIFACTS,'results.json'),JSON.stringify(results,null,2));
 console.log(`${results.filter(r=>r.status==='PASS').length}/${results.length} browser checks passed`);

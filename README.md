@@ -54,17 +54,19 @@ Real ICMP requests use the Windows `IcmpSendEcho` API with a one-second timeout.
 
 ### UDP command terminal
 
-The same Network Ping page includes a **UDP command terminal**. Upgrade to helper **1.2.0** by running the current Setup once; existing installed pairing and automatic startup are retained.
+The same Network Ping page includes a **UDP command terminal**. Upgrade to helper **1.3.0** by running the current Setup once; existing installed pairing and automatic startup are retained.
 
-1. Enter the device's IPv4 address and the UDP port configured on the device. No destination port is assumed.
-2. Enter the laptop receive port expected by the device, or leave **0** to choose a free port. Press **Open UDP**. The page shows the actual laptop IP and receive port.
+1. Enter the device's IPv4 address once at the top. Both ping and UDP use it. In the terminal, enter only the UDP port configured on the device.
+2. Choose **Device IP** or **Broadcast** for sending, then press **Open UDP**. Reply and broadcast receive ports are configured automatically. There is no second IP input or laptop-port input.
 3. Send a UTF-8 text command, optionally with NL/CR/CRLF, or select **Hex bytes** for binary commands. Press **Send** or Enter.
-4. **TX** shows commands sent by the laptop. **RX** shows messages received from the selected device IP, including unsolicited messages before any command. Replies may use a different source port on that IP.
+4. **TX** shows the actual send destination. **RX** shows incoming messages and each sender's IP/port, including unsolicited messages. **Receive broadcasts and messages from all local devices** is on by default; turn it off before opening UDP to accept only the selected device IP.
 5. Use **Hex view**, **Clear terminal**, or **Export terminal** as needed. Press **Close UDP** when finished.
 
-The device must send to the laptop's displayed IP and receive port. Allow the helper on **private networks** if Windows Firewall asks. The installer does not change firewall rules. UDP sending does not prove delivery or device execution; an RX message is needed to observe a reply. Commands are transmitted as bytes and are never run as Windows shell commands.
+The helper opens a free reply port and, when receiving from all devices, an additional listener on the device UDP port. For example, device port `5005` automatically listens for broadcasts on laptop port `5005`, while replies to sent commands can use the free reply port. If the broadcast port is occupied, the page reports this and keeps the reply listener available; close the other app and reopen UDP to enable broadcast reception. Broadcast sends use the actual Windows interface subnet mask, falling back to limited broadcast `255.255.255.255` if the mask is unavailable. The shared IP stays read-only while UDP is open, so it cannot drift away from the active destination.
 
-The helper's HTTP API remains loopback-only. Each open UDP socket listens on the chosen port across the laptop's network interfaces, accepts only datagrams from the selected local device IP, and closes on request. Browser page-close cleanup is attempted; a session also expires after two minutes without a browser heartbeat. At most four terminals can be open at once. Outgoing commands are limited to 4096 bytes and 20 sends per second. Received datagrams report their full byte count but display at most 4096 bytes per packet. The helper buffers 200 events per terminal, and the page displays the last 500; skipped events are reported when the buffer fills.
+Allow the helper on **private networks** if Windows Firewall asks. The installer does not change firewall rules. UDP sending does not prove delivery or device execution; an RX message is needed to observe a reply. Commands are transmitted as bytes and are never run as Windows shell commands.
+
+The helper's HTTP API remains loopback-only. UDP listeners accept the selected IP only, or all private/link-local/loopback source IPs when receive-all is enabled. They close on request. Browser page-close cleanup is attempted; a session also expires after two minutes without a browser heartbeat. At most four terminals can be open at once. Outgoing commands are limited to 4096 bytes and 20 sends per second. Received datagrams report their full byte count but display at most 4096 bytes per packet. The helper buffers 200 events per terminal, and the page displays the last 500; skipped events are reported when the buffer fills.
 
 ### Helper access and browser security
 
@@ -105,4 +107,4 @@ Build the installer after building the helper:
 helper/build-env/Scripts/python -m PyInstaller --noconfirm --clean --onefile --windowed --name HardwareCheckSetup --add-data "dist/HardwareCheckHelper.exe;." helper/setup.py
 ```
 
-The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.2.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.
+The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.3.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.

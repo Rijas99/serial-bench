@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="ping.css?v=2" />
+    <link rel="stylesheet" href="ping.css?v=3" />
   </head>
   <body>
     <div class="bg-grid" aria-hidden="true"></div>
@@ -34,7 +34,7 @@
             <div class="field-group"><label for="ipAddress">Device IP address</label><input id="ipAddress" name="ip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.1.20" maxlength="15" aria-describedby="ipHelp ipError" required /></div>
             <button class="btn btn-primary" id="startBtn" type="submit" disabled>Start ping</button>
             <button class="btn btn-ghost" id="stopBtn" type="button" disabled>Stop</button>
-            <p class="ping-input-help" id="ipHelp">Use a local IPv4 address. One ping per second, with a 1-second timeout.</p>
+            <p class="ping-input-help" id="ipHelp">This IP is used for ping and the UDP terminal. Close UDP and stop ping to change it.</p>
             <p class="ping-error" id="ipError" role="alert" hidden></p>
           </form>
           <section class="ping-results" aria-label="Live ping statistics">
@@ -47,17 +47,18 @@
           </section>
           <section class="udp-terminal" aria-labelledby="udpTitle">
             <div class="udp-heading"><h2 id="udpTitle">UDP command terminal</h2><span id="udpStatus" role="status">Connect the helper to use UDP</span></div>
-            <p class="udp-help">Open a receive port, send commands, and see incoming messages from your device.</p>
-            <p id="udpUpgrade" class="udp-help" hidden>UDP needs the latest helper. <a href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.2.0/HardwareCheckSetup.exe">Run the updated setup once</a>.</p>
+            <p class="udp-help">Uses the device IP above. Laptop receive ports are selected automatically.</p>
+            <p id="udpUpgrade" class="udp-help" hidden>Broadcast support needs the latest helper. <a href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.3.0/HardwareCheckSetup.exe">Run the updated setup once</a>.</p>
             <form id="udpOpenForm" class="udp-connection">
-              <div class="field-group"><label for="udpIp">Device IP</label><input id="udpIp" type="text" inputmode="decimal" placeholder="192.168.1.20" maxlength="15" autocomplete="off" required /></div>
               <div class="field-group"><label for="udpRemotePort">Device UDP port</label><input id="udpRemotePort" type="number" min="1" max="65535" step="1" placeholder="Device port" required /></div>
-              <div class="field-group"><label for="udpLocalPort">Laptop receive port</label><input id="udpLocalPort" type="number" min="0" max="65535" step="1" value="0" aria-describedby="udpPortHelp" required /></div>
+              <div class="field-group"><label for="udpSendTarget">Send commands to</label><select id="udpSendTarget"><option value="device">Device IP</option><option value="broadcast">Broadcast</option></select></div>
               <button type="submit" class="btn btn-primary" id="udpOpenBtn" disabled>Open UDP</button>
               <button type="button" class="btn btn-ghost" id="udpCloseBtn" disabled>Close UDP</button>
             </form>
-            <p id="udpPortHelp" class="udp-help">Receive port 0 chooses a free port automatically. For devices that send to a fixed port, enter that port here. Allow the helper on private networks if Windows asks.</p>
-            <p id="udpEndpoint" class="udp-endpoint">UDP is closed. No device port has been assumed.</p>
+            <label class="toggle udp-receive-toggle"><input type="checkbox" id="udpReceiveAll" checked />Receive broadcasts and messages from all local devices</label>
+            <p id="udpPortHelp" class="udp-help">The helper chooses a free reply port and also listens for broadcasts on the device UDP port. Allow it on private networks if Windows asks.</p>
+            <p id="udpEndpoint" class="udp-endpoint">UDP is closed. Enter the device IP once at the top and its UDP port here.</p>
+            <p id="udpPortNotice" class="udp-help" role="status"></p>
             <p id="udpError" class="ping-error" role="alert" hidden></p>
             <div class="udp-log-controls"><label class="toggle"><input type="checkbox" id="udpHexView" />Hex view</label><label class="toggle"><input type="checkbox" id="udpAutoScroll" checked />Auto-scroll</label><button type="button" class="btn btn-ghost btn-sm" id="udpExportBtn" disabled>Export terminal</button><button type="button" class="btn btn-ghost btn-sm" id="udpClearBtn">Clear terminal</button></div>
             <pre id="udpOutput" class="udp-output" tabindex="0" aria-label="Sent and received UDP messages"></pre>
@@ -67,14 +68,14 @@
               <div class="field-group"><label for="udpEnding">Line ending</label><select id="udpEnding"><option value="none">None</option><option value="nl">NL (\n)</option><option value="cr">CR (\r)</option><option value="crlf">CRLF (\r\n)</option></select></div>
               <button type="submit" class="btn btn-accent" id="udpSendBtn" disabled>Send</button>
             </form>
-            <p class="udp-help">TX = sent by this laptop. RX = received from the selected device IP, including messages it sends without a command. Sending UDP does not confirm delivery.</p>
+            <p class="udp-help">TX = sent by this laptop. RX = received messages, with the sender’s IP and port. Network broadcast sends the command to devices across the selected network. Sending UDP does not confirm delivery.</p>
           </section>
         </section>
         <aside class="ping-setup" aria-labelledby="helperTitle">
           <h2 id="helperTitle">Set up this laptop once</h2>
           <p id="helperDetail" role="status">Looking for the Windows helper on this laptop…</p>
           <ol class="steps"><li><span class="step-num">1</span><span>Download and open Setup, then choose Install and open tester.</span></li><li><span class="step-num">2</span><span>Allow the browser’s local network permission if asked.</span></li><li><span class="step-num">3</span><span>Next time, the helper starts with Windows and this page reconnects automatically.</span></li></ol>
-          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.2.0/HardwareCheckSetup.exe">Download one-time setup</a>
+          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.3.0/HardwareCheckSetup.exe">Download one-time setup</a>
           <a class="btn btn-ghost helper-launch" href="hardwarecheck-helper://open">Open installed helper</a>
           <button class="btn btn-ghost" id="checkHelperBtn" type="button">Check helper again</button>
           <details><summary>What setup does</summary><p>Installs for your Windows account without administrator access. Start with Windows is enabled by default; you can change it in Setup. The helper runs near the Windows clock.</p><p>A webpage cannot silently install a program. You need to download and run Setup once, and approve browser or Windows prompts. After setup, this browser remembers its pairing.</p><p>Use the tray icon to open the tester, stop the helper, or disable auto-start. Uninstall from Windows Settings → Apps.</p><p>The download is unsigned. Only run a copy you trust from this project’s GitHub release.</p></details>
@@ -83,6 +84,6 @@
       </div>
     </main>
     <footer class="foot"><p>Ping runs on this laptop through the Windows helper. Device addresses and results are not sent to a remote server.</p></footer>
-    <script src="ping.js?v=4" type="module"></script>
+    <script src="ping.js?v=5" type="module"></script>
   </body>
 </html>

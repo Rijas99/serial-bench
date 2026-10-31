@@ -1,4 +1,4 @@
-import { createUdpTerminal } from "./udp.js?v=1";
+import { createUdpTerminal } from "./udp.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const HELPER = "http://127.0.0.1:47831";
@@ -64,10 +64,10 @@ async function checkHelper() {
   $("checkHelperBtn").disabled = true;
   try {
     const data = await request("/health");
-    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0", "1.2.0"].includes(data.version)) {
+    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0", "1.2.0", "1.3.0"].includes(data.version)) {
       throw new Error("Unexpected helper version. Download the current helper.");
     }
-    supportsUdp = data.capabilities?.includes("udp") === true;
+    supportsUdp = data.capabilities?.includes("udp-broadcast") === true;
     if (data.paired === true) {
       showHelper(true, "Helper connected — ready to ping", "Connected to this laptop. Enter a device IP and start the test.");
     } else {

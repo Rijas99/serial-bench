@@ -10,7 +10,9 @@ export function createUdpTerminal({ request, validLocalIP }) {
     $("udpCloseBtn").disabled = !session || busy;
     $("udpSendBtn").disabled = !available || !session || busy || sending;
     $("udpCommand").disabled = !available || !session || busy;
-    for (const id of ["udpIp", "udpRemotePort", "udpLocalPort"]) $(id).readOnly = Boolean(session) || busy;
+    $("ipAddress").readOnly = Boolean(session) || busy;
+    $("udpRemotePort").readOnly = Boolean(session) || busy;
+    $("udpReceiveAll").disabled = Boolean(session) || busy;
     $("udpExportBtn").disabled = !history.length;
   }
 
@@ -45,7 +47,11 @@ export function createUdpTerminal({ request, validLocalIP }) {
     while (history.length > 500) history.shift();
     sent = Math.max(sent, data.sent);
     received = Math.max(received, data.received);
-    $("udpEndpoint").textContent = `Laptop ${data.localIp}:${data.localPort} · Device ${data.ip}:${data.remotePort} · TX ${sent} · RX ${received}`;
+    $("udpEndpoint").textContent = `Laptop ${data.localIp}:${data.localPort} · Device ${data.ip}:${data.remotePort} · Broadcast ${data.broadcastAddress}:${data.remotePort} · TX ${sent} · RX ${received}`;
+    $("udpPortNotice").textContent = data.broadcastWarning || (data.receiveAll
+      ? `Automatic receive ports: ${data.localPort} for replies and ${data.broadcastPort} for broadcasts. Receiving from all local devices.`
+      : `Automatic reply port: ${data.localPort}. Receiving only from ${data.ip}.`);
+    $("udpPortNotice").dataset.warning = String(Boolean(data.broadcastWarning));
     if ($("udpAutoScroll").checked) $("udpOutput").scrollTop = $("udpOutput").scrollHeight;
     if (data.closed) {
       session = null;
@@ -79,18 +85,17 @@ export function createUdpTerminal({ request, validLocalIP }) {
   $("udpOpenForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!available || busy || session) return;
-    const ip = $("udpIp").value.trim();
+    const ip = $("ipAddress").value.trim();
     const remotePort = Number($("udpRemotePort").value);
-    const localPort = Number($("udpLocalPort").value);
-    if (!validLocalIP(ip)) { error("Enter your device’s local IPv4 address."); $("udpIp").focus(); return; }
-    if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535 || !Number.isInteger(localPort) || localPort < 0 || localPort > 65535) {
-      error("Enter a device port from 1 to 65535 and a receive port from 0 to 65535."); return;
+    if (!validLocalIP(ip)) { error("Enter your device’s local IPv4 address in the IP field at the top."); $("ipAddress").focus(); return; }
+    if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) {
+      error("Enter a device UDP port from 1 to 65535."); return;
     }
     busy = true;
     error("");
     controls();
     try {
-      const data = await request("/udp/open", { ip, remotePort, localPort });
+      const data = await request("/udp/open", { ip, remotePort, localPort: 0, receiveAll: $("udpReceiveAll").checked });
       session = data.session;
       cursor = sent = received = 0;
       history.length = 0;
@@ -124,7 +129,8 @@ export function createUdpTerminal({ request, validLocalIP }) {
     controls();
     try {
       const data = await request("/udp/send", { session: current, after: cursor, data: command,
-        encoding: $("udpEncoding").value, ending: $("udpEnding").value });
+        encoding: $("udpEncoding").value, ending: $("udpEnding").value,
+        broadcast: $("udpSendTarget").value === "broadcast" });
       if (session === current) {
         apply(data);
         if ($("udpCommand").value === command) $("udpCommand").value = "";
@@ -168,7 +174,7 @@ export function createUdpTerminal({ request, validLocalIP }) {
     setHelperState(connected, supported) {
       available = connected && supported;
       $("udpUpgrade").hidden = !connected || supported;
-      if (!session) $("udpStatus").textContent = available ? "Ready — enter device IP and ports" : connected ? "Update helper to use UDP" : "Connect the helper to use UDP";
+      if (!session) $("udpStatus").textContent = available ? "Ready — uses device IP above" : connected ? "Update helper for broadcast support" : "Connect the helper to use UDP";
       controls();
     },
   };

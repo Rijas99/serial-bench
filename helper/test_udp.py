@@ -151,6 +151,50 @@ class UdpTests(unittest.TestCase):
         self.assertIn("expired", session.error)
         self.open()
 
+    def test_broadcast_receive_port_is_automatic_and_receives_real_broadcast(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reserved:
+            reserved.bind(("127.0.0.1", 0))
+            port = reserved.getsockname()[1]
+        opened = self.open(remotePort=port, receiveAll=True)
+        self.assertGreater(opened["localPort"], 0)
+        self.assertEqual(opened["broadcastPort"], port)
+        self.assertEqual(opened["broadcastWarning"], "")
+        self.device.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self.device.sendto(b"BROADCAST RX", ("127.255.255.255", port))
+        result = self.wait_rx(opened["session"])
+        self.assertEqual(result["events"][0]["text"], "BROADCAST RX")
+
+    def test_broadcast_send_uses_actual_interface_mask(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
+            receiver.bind(("0.0.0.0", 0))
+            receiver.settimeout(2)
+            opened = self.open(remotePort=receiver.getsockname()[1])
+            status, result = self.post("send", {"session": opened["session"], "data": "BROADCAST TX", "broadcast": True})
+            self.assertEqual(status, 200, result)
+            self.assertEqual(receiver.recvfrom(65535)[0], b"BROADCAST TX")
+            self.assertEqual(result["events"][-1]["ip"], "127.255.255.255")
+            self.assertEqual(opened["broadcastAddress"], "127.255.255.255")
+
+    def test_receive_all_accepts_other_local_device_ips(self):
+        opened = self.open(receiveAll=True)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as other:
+            other.bind(("127.0.0.2", 0))
+            other.sendto(b"SECOND DEVICE", ("127.0.0.1", opened["localPort"]))
+            result = self.wait_rx(opened["session"])
+        self.assertEqual(result["events"][0]["ip"], "127.0.0.2")
+
+    def test_busy_broadcast_port_is_reported_without_breaking_reply_port(self):
+        opened = self.open(receiveAll=True)
+        self.assertIsNone(opened["broadcastPort"])
+        self.assertIn("already in use", opened["broadcastWarning"])
+        self.device.sendto(b"REPLY", ("127.0.0.1", opened["localPort"]))
+        self.assertEqual(self.wait_rx(opened["session"])["events"][0]["text"], "REPLY")
+
+    def test_broadcast_switches_require_boolean_values(self):
+        self.assertEqual(self.post("open", {"ip": "127.0.0.1", "remotePort": self.device_port, "receiveAll": "yes"})[0], 400)
+        opened = self.open()
+        self.assertEqual(self.post("send", {"session": opened["session"], "data": "BAD", "broadcast": "yes"})[0], 400)
+
 
 if __name__ == "__main__":
     unittest.main()

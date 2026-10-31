@@ -62,6 +62,8 @@
 .udp-output .tx { color: #f0c18a; }
 .udp-output .sys { color: #a6b9c7; }
 .udp-command { flex: 1 1 240px; min-width: 0; }
+.udp-receive-toggle { margin-top: 1rem; line-height: 1.5; }
+#udpPortNotice[data-warning="true"] { color: #90430f; }
 @media (max-width: 480px) { .udp-terminal { padding: 1rem; } .udp-connection .btn { flex: 1; } }
 @media (max-width: 900px) { .ping-workspace { grid-template-columns: minmax(0, 1fr); } .ping-setup { grid-row: 1; } }
 @media (max-width: 480px) { .ping-controls, .ping-live { padding: 1rem; } .ping-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-left: 1rem; margin-right: 1rem; } .ping-live { flex-wrap: wrap; } .ping-table th, .ping-table td { padding: 0.65rem 0.45rem; } .ping-table th:first-child, .ping-table td:first-child { padding-left: 0.7rem; } }

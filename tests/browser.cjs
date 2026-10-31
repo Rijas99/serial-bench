@@ -105,6 +105,12 @@ await scenario('Serial reader acquisition failure shows a recoverable error',asy
 await scenario('Ping page detects unpaired helper and prevents starting',async p=>{
  await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper found — pairing needed');assert.equal(await p.locator('#startBtn').isDisabled(),true);
 },{native:true,query:'ping.html'});
+await scenario('Pairing link updates an already open tab without a reload',async p=>{
+ await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper found — pairing needed');
+ await p.evaluate(key=>location.hash='helper='+key,token);
+ await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);
+ assert.equal(await p.evaluate(()=>location.hash),'');
+},{native:true,query:'ping.html'});
 await scenario('Ping page pairs with actual helper, validates IP, sends real ICMP, stops and restarts',async p=>{
  await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.evaluate(()=>location.hash),'');
  for(const invalid of ['8.8.8.8','999.1.1.1','localhost','192.168.01.1']){await p.locator('#ipAddress').fill(invalid);await p.locator('#startBtn').click();assert.equal(await p.locator('#ipError').isVisible(),true);}

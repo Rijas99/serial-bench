@@ -1,14 +1,19 @@
 const $ = (id) => document.getElementById(id);
 const HELPER = "http://127.0.0.1:47831";
 const KEY = "hardware-check-helper-key";
-const fragmentKey = new URLSearchParams(location.hash.slice(1)).get("helper");
 let token = "";
 try { token = sessionStorage.getItem(KEY) || ""; } catch { /* Storage may be disabled. */ }
-if (fragmentKey && /^[A-Za-z0-9_-]{43}$/.test(fragmentKey)) {
-  token = fragmentKey;
-  try { sessionStorage.setItem(KEY, token); } catch { /* In-memory pairing still works. */ }
+function consumePairingKey() {
+  const fragmentKey = new URLSearchParams(location.hash.slice(1)).get("helper");
+  const valid = fragmentKey && /^[A-Za-z0-9_-]{43}$/.test(fragmentKey);
+  if (valid) {
+    token = fragmentKey;
+    try { sessionStorage.setItem(KEY, token); } catch { /* In-memory pairing still works. */ }
+  }
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  return valid;
 }
-if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+consumePairingKey();
 
 let ready = false;
 let checking = false;
@@ -191,5 +196,9 @@ $("stopBtn").addEventListener("click", () => {
   wake?.();
 });
 $("checkHelperBtn").addEventListener("click", checkHelper);
+// Opening a paired link can reuse an existing tab without reloading its scripts.
+window.addEventListener("hashchange", () => {
+  if (consumePairingKey()) checkHelper();
+});
 checkHelper();
 setInterval(checkHelper, 5000);

@@ -2,13 +2,13 @@ const $ = (id) => document.getElementById(id);
 const HELPER = "http://127.0.0.1:47831";
 const KEY = "hardware-check-helper-key";
 let token = "";
-try { token = sessionStorage.getItem(KEY) || ""; } catch { /* Storage may be disabled. */ }
+try { token = localStorage.getItem(KEY) || sessionStorage.getItem(KEY) || ""; } catch { /* Storage may be disabled. */ }
 function consumePairingKey() {
   const fragmentKey = new URLSearchParams(location.hash.slice(1)).get("helper");
   const valid = fragmentKey && /^[A-Za-z0-9_-]{43}$/.test(fragmentKey);
   if (valid) {
     token = fragmentKey;
-    try { sessionStorage.setItem(KEY, token); } catch { /* In-memory pairing still works. */ }
+    try { localStorage.setItem(KEY, token); sessionStorage.setItem(KEY, token); } catch { /* In-memory pairing still works. */ }
   }
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   return valid;
@@ -59,16 +59,16 @@ async function checkHelper() {
   $("checkHelperBtn").disabled = true;
   try {
     const data = await request("/health");
-    if (data.service !== "hardware-check-helper" || data.version !== "1.0.0") {
+    if (data.service !== "hardware-check-helper" || !["1.0.0", "1.1.0"].includes(data.version)) {
       throw new Error("Unexpected helper version. Download the current helper.");
     }
     if (data.paired === true) {
       showHelper(true, "Helper connected — ready to ping", "Connected to this laptop. Enter a device IP and start the test.");
     } else {
-      showHelper(false, "Helper found — pairing needed", "Open the private paired link shown in the helper window in Chrome or Edge. The key changes each time the helper starts.");
+      showHelper(false, "Helper found — pairing needed", "Press Open installed helper to pair this browser automatically. If you use the older portable helper, open its private link instead.");
     }
   } catch {
-    showHelper(false, "Helper unavailable", "Download and open the Windows helper, then use the page it opens. If it is already running, allow local network / loopback access in this site’s browser permissions and check again.");
+    showHelper(false, "Helper unavailable", "First time here? Install the helper below once. Already installed? Press Open installed helper. Allow local network / loopback access if your browser asks; this page will connect automatically.");
   } finally {
     checking = false;
     $("checkHelperBtn").disabled = false;

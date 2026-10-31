@@ -47,17 +47,18 @@
           </section>
         </section>
         <aside class="ping-setup" aria-labelledby="helperTitle">
-          <h2 id="helperTitle">Connect this laptop</h2>
+          <h2 id="helperTitle">Set up this laptop once</h2>
           <p id="helperDetail" role="status">Looking for the Windows helper on this laptop…</p>
-          <ol class="steps"><li><span class="step-num">1</span><span>Download and open the Windows helper below.</span></li><li><span class="step-num">2</span><span>Use the paired page it opens in Chrome or Edge. Keep the helper window open.</span></li><li><span class="step-num">3</span><span>Allow the browser’s local network permission if asked.</span></li></ol>
-          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.0.0/HardwareCheckHelper.exe">Download Windows helper</a>
+          <ol class="steps"><li><span class="step-num">1</span><span>Download and open Setup, then choose Install and open tester.</span></li><li><span class="step-num">2</span><span>Allow the browser’s local network permission if asked.</span></li><li><span class="step-num">3</span><span>Next time, the helper starts with Windows and this page reconnects automatically.</span></li></ol>
+          <a class="btn btn-accent download-helper" href="https://github.com/Rijas99/serial-bench/releases/download/helper-v1.1.0/HardwareCheckSetup.exe">Download one-time setup</a>
+          <a class="btn btn-ghost helper-launch" href="hardwarecheck-helper://open">Open installed helper</a>
           <button class="btn btn-ghost" id="checkHelperBtn" type="button">Check helper again</button>
-          <details><summary>About the helper</summary><p>Portable for Windows 10/11, 64-bit. No installation or administrator access needed. Each laptop runs its own helper. Close its window to stop it.</p><p>The helper opens a private pairing link. If your default browser is not Chrome or Edge, copy that link from the helper window into one of them.</p><p>The download is unsigned. Windows may show a security prompt. Only run a copy you trust from this project’s GitHub release.</p></details>
+          <details><summary>What setup does</summary><p>Installs for your Windows account without administrator access. Start with Windows is enabled by default; you can change it in Setup. The helper runs near the Windows clock.</p><p>A webpage cannot silently install a program. You need to download and run Setup once, and approve browser or Windows prompts. After setup, this browser remembers its pairing.</p><p>Use the tray icon to open the tester, stop the helper, or disable auto-start. Uninstall from Windows Settings → Apps.</p><p>The download is unsigned. Only run a copy you trust from this project’s GitHub release.</p></details>
           <details><summary>No reply or helper blocked?</summary><p>A device can be online and still block ICMP ping. Check the IP address, laptop network, device power, firewall, and Wi-Fi client isolation.</p><p>If the helper is running but cannot connect, use Check helper again and allow local network or loopback access in this site’s browser permissions. A company browser policy may block access.</p></details>
         </aside>
       </div>
     </main>
     <footer class="foot"><p>Ping runs on this laptop through the Windows helper. Device addresses and results are not sent to a remote server.</p></footer>
-    <script src="ping.js?v=2" type="module"></script>
+    <script src="ping.js?v=3" type="module"></script>
   </body>
 </html>

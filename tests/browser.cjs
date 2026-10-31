@@ -111,6 +111,17 @@ await scenario('Pairing link updates an already open tab without a reload',async
  await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);
  assert.equal(await p.evaluate(()=>location.hash),'');
 },{native:true,query:'ping.html'});
+await scenario('Setup instructions provide installer and explicit launch link',async p=>{
+ await p.route('http://127.0.0.1:47831/health',r=>r.abort());await p.locator('#checkHelperBtn').click();
+ await p.waitForFunction(()=>document.querySelector('#helperStatus').textContent==='Helper unavailable');
+ assert.match(await p.locator('.download-helper').getAttribute('href'),/helper-v1\.1\.0\/HardwareCheckSetup\.exe$/);
+ assert.equal(await p.locator('.helper-launch').getAttribute('href'),'hardwarecheck-helper://open');
+},{native:true,query:'ping.html'});
+await scenario('Opening a new tab reconnects using remembered pairing',async(p,context)=>{
+ await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);
+ const next=await context.newPage();await next.goto('http://127.0.0.1:8765/ping.html');
+ await next.waitForFunction(()=>!document.querySelector('#startBtn').disabled);await next.close();
+},{native:true,query:'ping.html#helper='+token});
 await scenario('Ping page pairs with actual helper, validates IP, sends real ICMP, stops and restarts',async p=>{
  await p.waitForFunction(()=>!document.querySelector('#startBtn').disabled);assert.equal(await p.evaluate(()=>location.hash),'');
  for(const invalid of ['8.8.8.8','999.1.1.1','localhost','192.168.01.1']){await p.locator('#ipAddress').fill(invalid);await p.locator('#startBtn').click();assert.equal(await p.locator('#ipError').isVisible(),true);}

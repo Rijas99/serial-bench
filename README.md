@@ -41,21 +41,23 @@ Use **Latest only** to show one live value, or **Pause** to freeze the screen.
 
 Open [Network Ping](https://rijas99.github.io/serial-bench/ping.html).
 
-1. Download **HardwareCheckHelper.exe** from the page, and open it on your Windows laptop.
+1. Download **HardwareCheckSetup.exe** from the page, open it on your Windows laptop, and choose **Install and open tester**. Close an older portable helper window first.
 2. Use the paired page opened by the helper in Chrome or Edge; allow local network / loopback access if the browser asks. If another browser opens, copy the private link from the helper window into Chrome or Edge.
 3. Enter the device's local IPv4 address and press **Start ping**. Press **Stop** to finish; the current packet completes before stopping.
-4. Keep the helper window open while testing. Close it or press Ctrl+C when finished.
+4. The helper runs in the system tray near the clock. On later visits, this browser remembers its pairing and reconnects automatically. If stopped, use **Open installed helper** on the page.
 
-The portable helper supports Windows 10/11 x64, requires no Python installation or administrator rights, and does not install a service or start with Windows. It is unsigned, so Windows may show a security prompt. Each laptop needs its own copy. Installer and system-tray support are not included in this version.
+Setup supports Windows 10/11 x64 and requires no Python installation or administrator rights. It installs under `%LOCALAPPDATA%/HardwareCheckHelper` for the current user, with **Start with Windows** selected by default. It registers a `hardwarecheck-helper://open` link, which only opens the fixed tester page. The tray menu can open the tester, disable auto-start, or exit. Uninstall through Windows Settings > Apps. The downloads are unsigned, so Windows may show a security prompt. Each laptop needs its own setup. A webpage cannot silently install software or bypass browser prompts.
+
+The separate portable **HardwareCheckHelper.exe** is also available in the release: open it when needed and keep its console window running. Portable mode does not install or change startup settings.
 
 Real ICMP requests use the Windows `IcmpSendEcho` API with a one-second timeout. The panel displays reply time, sent/received/lost packets, loss percentage, and minimum/average/maximum latency. One request runs at a time, at most once per second. Starting a new test resets the statistics. The last 100 results remain visible; statistics cover the entire current test. A device that blocks ICMP may still be online.
 
 ### Helper access and browser security
 
 - The server binds only to `127.0.0.1:47831`, never a LAN interface.
-- Production requests require the exact website origin `https://rijas99.github.io`, the exact loopback Host header, and a random 256-bit pairing key for ping operations. Keys change on every helper launch.
-- GitHub Pages repositories share an origin. The per-launch secret key protects ping access from other pages on that origin; CORS alone cannot restrict access to a repository path.
-- The helper opens only `/serial-bench/ping.html#helper=...`. The page removes the fragment immediately and retains the key in this tab's session storage (or memory if storage is disabled). Keep the paired link private.
+- Production requests require the exact website origin `https://rijas99.github.io`, the exact loopback Host header, and a random 256-bit pairing key for ping operations. The installed helper retains its key in the current user's application folder, so browser pairing survives sign-in/restarts. Uninstall removes it. Portable keys change on each launch.
+- GitHub Pages repositories share an origin. The secret pairing key is needed in addition to CORS; repository paths are not browser security boundaries. All content on this account's Pages origin must be trusted because browser storage is shared across it.
+- The helper opens only `/serial-bench/ping.html#helper=...`. The page removes the fragment immediately and remembers the key in browser local storage (or tab/memory if storage is disabled). Keep the paired link private. Clearing site data removes browser pairing; **Open installed helper** restores it.
 - Health discovery reveals only the helper version and whether the supplied key is valid. No endpoint returns the key. Responses are not cached.
 - Only literal private LAN, link-local, or loopback IPv4 addresses are accepted. No DNS lookups, shell commands, public targets, or scan endpoints.
 - Browser local network permission remains under user / administrator control. Denial or an organization browser policy cannot be bypassed by the helper.
@@ -83,4 +85,10 @@ helper/build-env/Scripts/python -m pip install -r helper/requirements-build.txt
 helper/build-env/Scripts/python -m PyInstaller --noconfirm --clean --onefile --console --name HardwareCheckHelper helper/bench_helper.py
 ```
 
-The executable is `dist/HardwareCheckHelper.exe`. To test the packaged executable rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's download link points to the versioned `helper-v1.0.0` release asset; its release also includes the executable's SHA-256 checksum. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.
+Build the installer after building the helper:
+
+```powershell
+helper/build-env/Scripts/python -m PyInstaller --noconfirm --clean --onefile --windowed --name HardwareCheckSetup --add-data "dist/HardwareCheckHelper.exe;." helper/setup.py
+```
+
+The executables are `dist/HardwareCheckHelper.exe` and `dist/HardwareCheckSetup.exe`. To test the packaged helper rather than Python source, set `$env:HELPER_EXE` to its absolute path before `npm test`. The website's setup link points to `helper-v1.1.0`; its release also includes SHA-256 checksums. The repository's existing GitHub Pages workflow publishes the website on pushes to `master`.
